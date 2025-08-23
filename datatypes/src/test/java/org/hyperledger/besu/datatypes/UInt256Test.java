@@ -26,10 +26,10 @@ public class UInt256Test {
 
   @Test
   public void smallInts() {
-    UInt256 number = new UInt256(523);
-    UInt256 modulus = new UInt256(27);
+    UInt256 number = UInt256.fromInt(523);
+    UInt256 modulus = UInt256.fromInt(27);
     UInt256 remainder = number.mod(modulus);
-    UInt256 expected = new UInt256(523 % 27);
+    UInt256 expected = UInt256.fromInt(523 % 27);
     assertThat(remainder).isEqualTo(expected);
   }
 
@@ -39,7 +39,7 @@ public class UInt256Test {
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
     UInt256 number = new UInt256(num_arr);
-    UInt256 modulus = new UInt256(27);
+    UInt256 modulus = UInt256.fromInt(27);
     int remainder = number.mod(modulus).intValue();
     BigInteger big_number = new BigInteger(1, num_arr);
     BigInteger big_modulus = BigInteger.valueOf(27L);
