@@ -17,17 +17,19 @@ package org.hyperledger.besu.datatypes;
 import java.util.Arrays;
 
 public final class UInt256 {
-  private final int[] limbs;  // little-endian limbs, length = 8
-  private final int length;   // number of significant limbs
+  private final int[] limbs; // little-endian limbs, length = 8
+  private final int length; // number of significant limbs
 
   // --- Preallocating small integers 0..nSmallInts ---
-  private static final int nSmallInts=256;
+  private static final int nSmallInts = 256;
   private static final UInt256[] smallInts = new UInt256[nSmallInts];
+
   static {
-    for ( int i=0; i < nSmallInts; i++ ) {
+    for (int i = 0; i < nSmallInts; i++) {
       smallInts[i] = new UInt256(new int[] {i, 0, 0, 0, 0, 0, 0, 0});
     }
   }
+
   public static final UInt256 ZERO = smallInts[0];
   public static final UInt256 ONE = smallInts[1];
   public static final UInt256 TWO = smallInts[2];
@@ -50,10 +52,10 @@ public final class UInt256 {
     for (int i = 0; i < 8; i++) {
       int base = 28 - (i * 4); // big-endian bytes into little-endian ints
       this.limbs[i] =
-        ((padded[base]     & 0xFF) << 24) |
-        ((padded[base + 1] & 0xFF) << 16) |
-        ((padded[base + 2] & 0xFF) << 8)  |
-        ((padded[base + 3] & 0xFF));
+          ((padded[base] & 0xFF) << 24)
+              | ((padded[base + 1] & 0xFF) << 16)
+              | ((padded[base + 2] & 0xFF) << 8)
+              | ((padded[base + 3] & 0xFF));
     }
     length = computeLength(limbs);
   }
@@ -69,12 +71,12 @@ public final class UInt256 {
   }
 
   public static UInt256 fromInt(final int value) {
-    if ( 0 <= value && value < nSmallInts ) return smallInts[value];
+    if (0 <= value && value < nSmallInts) return smallInts[value];
     return new UInt256(new int[] {value, 0, 0, 0, 0, 0, 0, 0});
   }
 
   public static UInt256 fromLong(final long value) {
-    if ( 0 <= value && value < nSmallInts ) return smallInts[(int) value];
+    if (0 <= value && value < nSmallInts) return smallInts[(int) value];
     return new UInt256(new int[] {(int) value, (int) (value >>> 32), 0, 0, 0, 0, 0, 0});
   }
 
@@ -127,12 +129,12 @@ public final class UInt256 {
 
   public static int compare(final UInt256 a, final UInt256 b) {
     int comp = Integer.compare(a.length(), b.length());
-    if ( comp != 0 ) return comp;
+    if (comp != 0) return comp;
     long[] aa = a.asLongs();
     long[] bb = b.asLongs();
     for (int i = a.length - 1; i >= 0; i--) {
-      comp = Long.compare(aa[i], bb[i]); 
-      if ( comp != 0 ) return comp;
+      comp = Long.compare(aa[i], bb[i]);
+      if (comp != 0) return comp;
     }
     return 0;
   }
@@ -189,7 +191,7 @@ public final class UInt256 {
         long cur = (rem << 32) | (limbs[i] & 0xFFFFFFFFL);
         rem = cur % d;
       }
-      return fromLimbs(new int[]{(int) rem});
+      return fromLimbs(new int[] {(int) rem});
     }
 
     // --- Shortcut: divisor fits in 64 bits (2 limbs) ---
@@ -205,7 +207,7 @@ public final class UInt256 {
       }
       int lo = (int) rem;
       int hi = (int) (rem >>> 32);
-      return fromLimbs(new int[]{lo, hi});
+      return fromLimbs(new int[] {lo, hi});
     }
 
     // --- Knuth Division ---
@@ -291,7 +293,7 @@ public final class UInt256 {
     int h = 1;
     int len = this.length();
     for (int i = 0; i < len; i++) {
-        h = 31 * h + limbs[i];
+      h = 31 * h + limbs[i];
     }
     return h;
   }

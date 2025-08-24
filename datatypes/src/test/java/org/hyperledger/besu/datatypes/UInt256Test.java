@@ -14,12 +14,12 @@
  */
 package org.hyperledger.besu.datatypes;
 
-import java.math.BigInteger;
-import org.apache.tuweni.bytes.Bytes;
-import org.apache.tuweni.bytes.Bytes32;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigInteger;
+
+import org.apache.tuweni.bytes.Bytes;
+import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 
 public class UInt256Test {
@@ -35,9 +35,11 @@ public class UInt256Test {
 
   @Test
   public void smallMod() {
-    byte[] num_arr = new byte[] {
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+    byte[] num_arr =
+        new byte[] {
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        };
     UInt256 number = new UInt256(num_arr);
     UInt256 modulus = UInt256.fromInt(27);
     int remainder = number.mod(modulus).intValue();
@@ -49,12 +51,16 @@ public class UInt256Test {
 
   @Test
   public void bigMod() {
-    byte[] num_arr = new byte[] {
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
-    byte[] mod_arr = new byte[] { 
-      -111, 126, 78, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    byte[] num_arr =
+        new byte[] {
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        };
+    byte[] mod_arr =
+        new byte[] {
+          -111, 126, 78, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
     UInt256 number = new UInt256(num_arr);
     UInt256 modulus = new UInt256(mod_arr);
     Bytes32 remainder = Bytes32.wrap(number.mod(modulus).toBytesBE());
@@ -64,4 +70,3 @@ public class UInt256Test {
     assertThat(remainder).isEqualTo(expected);
   }
 }
-
