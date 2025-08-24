@@ -30,13 +30,28 @@ public final class UInt256 {
     }
   }
 
+  /** The constant 0. */
   public static final UInt256 ZERO = smallInts[0];
+
+  /** The constant 1. */
   public static final UInt256 ONE = smallInts[1];
+
+  /** The constant 2. */
   public static final UInt256 TWO = smallInts[2];
+
+  /** The constant 10. */
   public static final UInt256 TEN = smallInts[10];
+
+  /** The constant 16. */
   public static final UInt256 SIXTEEN = smallInts[16];
 
   // --- Constructors ---
+
+  /**
+   * Instantiates a new UInt256 from byte[].
+   *
+   * @param bytes raw bytes in BigEndian order.
+   */
   public UInt256(final byte[] bytes) {
     if (bytes.length > 32) {
       throw new IllegalArgumentException("UInt256 can only hold up to 32 bytes");
@@ -65,16 +80,31 @@ public final class UInt256 {
     this.length = computeLength(limbs);
   }
 
+  /**
+   * Instantiates a new UInt256 from int[].
+   *
+   * @param limbs int limbs in LittleEndian order.
+   */
   public static UInt256 fromLimbs(final int[] limbs) {
     if (limbs.length > 8) throw new IllegalArgumentException();
     return new UInt256(Arrays.copyOf(limbs, 8));
   }
 
+  /**
+   * Instantiates a new UInt256 from an int.
+   *
+   * @param value int value to convert to UInt256.
+   */
   public static UInt256 fromInt(final int value) {
     if (0 <= value && value < nSmallInts) return smallInts[value];
     return new UInt256(new int[] {value, 0, 0, 0, 0, 0, 0, 0});
   }
 
+  /**
+   * Instantiates a new UInt256 from a long.
+   *
+   * @param value long value to convert to UInt256.
+   */
   public static UInt256 fromLong(final long value) {
     if (0 <= value && value < nSmallInts) return smallInts[(int) value];
     return new UInt256(new int[] {(int) value, (int) (value >>> 32), 0, 0, 0, 0, 0, 0});
@@ -89,14 +119,25 @@ public final class UInt256 {
 
   // ---- conversion ----
 
+  /**
+   * Convert to int.
+   *
+   * @return Value truncated to an int, possibly lossy.
+   */
   public int intValue() {
     return limbs[0];
   }
 
+  /**
+   * Convert to int.
+   *
+   * @return Value truncated to a long, possibly lossy.
+   */
   public long longValue() {
     return (limbs[0] & 0xFFFFFFFFL) | ((limbs[1] & 0xFFFFFFFFL) << 32);
   }
 
+  /** Convert to BigEndian byte array. */
   public byte[] toBytesBE() {
     byte[] out = new byte[32];
     encodeInt(out, 0, limbs[7]);
@@ -117,16 +158,25 @@ public final class UInt256 {
     out[offset + 3] = (byte) v;
   }
 
+  /** Number of active int limbs. */
   public int length() {
     return length;
   }
 
   // ---- comparison ----
 
+  /** Is the value 0 ? */
   public boolean isZero() {
     return length == 0;
   }
 
+  /**
+   * Compares two UInt256.
+   *
+   * @param a left UInt256
+   * @param b right UInt256
+   * @return 0 if a == b, negative if a &lt b and positive if a &gt b.
+   */
   public static int compare(final UInt256 a, final UInt256 b) {
     int comp = Integer.compare(a.length(), b.length());
     if (comp != 0) return comp;
@@ -148,8 +198,14 @@ public final class UInt256 {
     };
   }
 
+  /**
+   * Shifts value to the left.
+   *
+   * @param s number of places to shift. If negative, shift right instead.
+   */
   public UInt256 shiftLeft(final int s) {
     if (s == 0 || isZero()) return this;
+    if (s < 0) return shiftRight(-s);
     int[] res = new int[8];
     long carry = 0;
     for (int i = 0; i < 8; i++) {
@@ -161,8 +217,14 @@ public final class UInt256 {
     return fromLimbs(res);
   }
 
+  /**
+   * Shifts value to the right.
+   *
+   * @param s number of places to shift. If negative, shift left instead.
+   */
   public UInt256 shiftRight(final int s) {
     if (s == 0 || isZero()) return this;
+    if (s < 0) return shiftLeft(-s);
     int[] res = new int[8];
     long carry = 0;
     for (int i = 7; i >= 0; i--) {
@@ -174,6 +236,11 @@ public final class UInt256 {
     return fromLimbs(res);
   }
 
+  /**
+   * Reduce modulo divisor.
+   *
+   * @param divisor The modulus of the reduction
+   */
   public UInt256 mod(final UInt256 divisor) {
     if (divisor.isZero()) throw new ArithmeticException("divide by zero");
     int cmp = compare(this, divisor);
