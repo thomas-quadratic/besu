@@ -18,14 +18,13 @@ import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.operation.ModOperation;
 import org.hyperledger.besu.evm.operation.Operation;
 
-import java.util.concurrent.ThreadLocalRandom;
 import java.math.BigInteger;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.apache.tuweni.bytes.Bytes;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.infra.Blackhole;
-
 
 public class ModOperationBenchmark extends BinaryOperationBenchmark {
   // Benches for a % b
@@ -94,7 +93,7 @@ public class ModOperationBenchmark extends BinaryOperationBenchmark {
       final byte[] bSmall = new byte[bSmallSize];
       final byte[] aBig = new byte[aBigSize];
       final byte[] bBig = new byte[bBigSize];
-      
+
       random.nextBytes(a);
       random.nextBytes(b);
       random.nextBytes(aInt);

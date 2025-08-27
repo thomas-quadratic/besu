@@ -25,6 +25,79 @@ import org.junit.jupiter.api.Test;
 public class UInt256Test {
 
   @Test
+  public void fromInts() {
+    UInt256 result;
+
+    result = UInt256.fromInt(0);
+    assertThat(result.length()).as("Int 0 length").isEqualTo(0);
+    assertThat(result.isZero()).as("Int 0, isZero").isTrue();
+
+    int[] testInts = new int[] {130, -128, 32500};
+    for (int i : testInts) {
+      result = UInt256.fromInt(i);
+      assertThat(result.length()).as(String.format("Int %s length", i)).isEqualTo(1);
+      assertThat(result.intValue()).as(String.format("Int %s value", i)).isEqualTo(i);
+    }
+  }
+
+  @Test
+  public void fromBytesBE() {
+    byte[] input;
+    UInt256 result;
+    int[] expectedLimbs;
+
+    input = new byte[] {-128, 0, 0, 0};
+    result = UInt256.fromBytesBE(input);
+    expectedLimbs = new int[] {-2147483648};
+    assertThat(result.length()).as("4b-neg-length").isEqualTo(expectedLimbs.length);
+    assertThat(result.limbs()).as("4b-neg-limbs").isEqualTo(expectedLimbs);
+
+    input = new byte[] {0, 0, 1, 1, 1};
+    result = UInt256.fromBytesBE(input);
+    expectedLimbs = new int[] {1 + 256 + 65536};
+    assertThat(result.length()).as("3b-length").isEqualTo(expectedLimbs.length);
+    assertThat(result.limbs()).as("3b-limbs").isEqualTo(expectedLimbs);
+
+    input = new byte[] {1, 0, 0, 0, 0, 1, 1, 1};
+    result = UInt256.fromBytesBE(input);
+    expectedLimbs = new int[] {1 + 256 + 65536, 16777216};
+    assertThat(result.length()).as("8b-length").isEqualTo(expectedLimbs.length);
+    assertThat(result.limbs()).as("8b-limbs").isEqualTo(expectedLimbs);
+
+    input =
+        new byte[] {
+          1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+    result = UInt256.fromBytesBE(input);
+    expectedLimbs = new int[] {0, 0, 0, 0, 0, 0, 0, 16777216};
+    assertThat(result.length()).as("32b-length").isEqualTo(expectedLimbs.length);
+    assertThat(result.limbs()).as("32b-limbs").isEqualTo(expectedLimbs);
+
+    input =
+        new byte[] {
+          0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        };
+    result = UInt256.fromBytesBE(input);
+    expectedLimbs = new int[] {0, 0, 0, 0, 0, 0, 257};
+    assertThat(result.length()).as("32b-padded-length").isEqualTo(expectedLimbs.length);
+    assertThat(result.limbs()).as("32b-padded-limbs").isEqualTo(expectedLimbs);
+  }
+
+  @Test
+  public void fromToBytesBE() {
+    byte[] input =
+        new byte[] {
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+        };
+    UInt256 asUint = UInt256.fromBytesBE(input);
+    BigInteger asBigInt = new BigInteger(1, input);
+    assertThat(asUint.toBytesBE()).isEqualTo(asBigInt.toByteArray());
+  }
+
+  @Test
   public void smallInts() {
     UInt256 number = UInt256.fromInt(523);
     UInt256 modulus = UInt256.fromInt(27);
@@ -40,7 +113,23 @@ public class UInt256Test {
           1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
           1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
         };
-    UInt256 number = new UInt256(num_arr);
+    UInt256 number = UInt256.fromBytesBE(num_arr);
+    UInt256 modulus = UInt256.fromInt(27);
+    int remainder = number.mod(modulus).intValue();
+    BigInteger big_number = new BigInteger(1, num_arr);
+    BigInteger big_modulus = BigInteger.valueOf(27L);
+    int expected = big_number.mod(big_modulus).intValue();
+    assertThat(remainder).isEqualTo(expected);
+  }
+
+  @Test
+  public void smallModFullDividend() {
+    byte[] num_arr =
+        new byte[] {
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -127
+        };
+    UInt256 number = UInt256.fromBytesBE(num_arr);
     UInt256 modulus = UInt256.fromInt(27);
     int remainder = number.mod(modulus).intValue();
     BigInteger big_number = new BigInteger(1, num_arr);
@@ -56,14 +145,29 @@ public class UInt256Test {
           1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
           1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
         };
-    byte[] mod_arr =
+    byte[] mod_arr = new byte[] {-111, 126, 78, 12};
+    UInt256 number = UInt256.fromBytesBE(num_arr);
+    UInt256 modulus = UInt256.fromBytesBE(mod_arr);
+    Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(number.mod(modulus).toBytesBE()));
+    BigInteger big_number = new BigInteger(1, num_arr);
+    BigInteger big_modulus = new BigInteger(1, mod_arr);
+    System.out.println(String.format("Dividend: %s", big_number.toString()));
+    System.out.println(String.format("Divisor: %s", big_modulus.toString()));
+    Bytes32 expected = Bytes32.leftPad(Bytes.wrap(big_number.mod(big_modulus).toByteArray()));
+    assertThat(remainder).isEqualTo(expected);
+  }
+
+  @Test
+  public void bigModWithExtraCarry() {
+    byte[] num_arr =
         new byte[] {
-          -111, 126, 78, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+          -126, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+          1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 123
         };
-    UInt256 number = new UInt256(num_arr);
-    UInt256 modulus = new UInt256(mod_arr);
-    Bytes32 remainder = Bytes32.wrap(number.mod(modulus).toBytesBE());
+    byte[] mod_arr = new byte[] {12, 126, 78, -11};
+    UInt256 number = UInt256.fromBytesBE(num_arr);
+    UInt256 modulus = UInt256.fromBytesBE(mod_arr);
+    Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(number.mod(modulus).toBytesBE()));
     BigInteger big_number = new BigInteger(1, num_arr);
     BigInteger big_modulus = new BigInteger(1, mod_arr);
     Bytes32 expected = Bytes32.leftPad(Bytes.wrap(big_number.mod(big_modulus).toByteArray()));
