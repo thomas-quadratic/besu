@@ -151,8 +151,6 @@ public class UInt256Test {
     Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(number.mod(modulus).toBytesBE()));
     BigInteger big_number = new BigInteger(1, num_arr);
     BigInteger big_modulus = new BigInteger(1, mod_arr);
-    System.out.println(String.format("Dividend: %s", big_number.toString()));
-    System.out.println(String.format("Divisor: %s", big_modulus.toString()));
     Bytes32 expected = Bytes32.leftPad(Bytes.wrap(big_number.mod(big_modulus).toByteArray()));
     assertThat(remainder).isEqualTo(expected);
   }
@@ -165,6 +163,34 @@ public class UInt256Test {
           1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 123
         };
     byte[] mod_arr = new byte[] {12, 126, 78, -11};
+    UInt256 number = UInt256.fromBytesBE(num_arr);
+    UInt256 modulus = UInt256.fromBytesBE(mod_arr);
+    Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(number.mod(modulus).toBytesBE()));
+    BigInteger big_number = new BigInteger(1, num_arr);
+    BigInteger big_modulus = new BigInteger(1, mod_arr);
+    Bytes32 expected = Bytes32.leftPad(Bytes.wrap(big_number.mod(big_modulus).toByteArray()));
+    assertThat(remainder).isEqualTo(expected);
+  }
+
+  @Test
+  public void modA() {
+    byte[] num_arr = new byte[] {0x00, 0x00, 0x00, 0x00, 0x67, (byte) 0xe3, 0x68, 0x64};
+    byte[] mod_arr = new byte[] {0x00, 0x1f, (byte) 0xff};
+    UInt256 number = UInt256.fromBytesBE(num_arr);
+    UInt256 modulus = UInt256.fromBytesBE(mod_arr);
+    Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(number.mod(modulus).toBytesBE()));
+    BigInteger big_number = new BigInteger(1, num_arr);
+    BigInteger big_modulus = new BigInteger(1, mod_arr);
+    Bytes32 expected = Bytes32.leftPad(Bytes.wrap(big_number.mod(big_modulus).toByteArray()));
+    assertThat(remainder).isEqualTo(expected);
+  }
+
+  @Test
+  public void modB() {
+    byte[] num_arr =
+        new byte[] {0x02, 0x2b, 0x1c, (byte) 0x8c, 0x12, 0x27, (byte) 0xa0, 0x00, 0x00};
+    byte[] mod_arr =
+        new byte[] {0x03, (byte) 0x8d, 0x7e, (byte) 0xa4, (byte) 0xc6, (byte) 0x80, 0x00};
     UInt256 number = UInt256.fromBytesBE(num_arr);
     UInt256 modulus = UInt256.fromBytesBE(mod_arr);
     Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(number.mod(modulus).toBytesBE()));

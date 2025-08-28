@@ -19,7 +19,7 @@ import java.util.Arrays;
 /**
  * 256-bits wide unsigned integer class.
  *
- * <p> This class is an optimised version of BigInteger for fixed width 8byte integers</p>
+ * <p>This class is an optimised version of BigInteger for fixed width 8byte integers
  */
 public final class UInt256 {
   // Wraps a view over limbs array from 0..length.
@@ -93,18 +93,30 @@ public final class UInt256 {
 
     int i;
     int base;
+    // Up to most significant limb take 4 bytes.
     for (i = 0, base = bytes.length - 4; i < len - 1; ++i, base = base - 4) {
       limbs[i] =
-          ((bytes[base] & 0xFF) << 24)
+          (bytes[base] << 24)
               | ((bytes[base + 1] & 0xFF) << 16)
               | ((bytes[base + 2] & 0xFF) << 8)
               | ((bytes[base + 3] & 0xFF));
     }
-    // Last effective byte
-    int nMBS = nBytes - i * 4;
-    for (int j = offset, shift = (nMBS - 1) * 8; j < offset + nMBS; ++j, shift -= 8) {
-      limbs[i] |= ((bytes[j] & 0xFF) << shift);
-    }
+    // Last effective limb
+    limbs[i] =
+        switch (nBytes - i * 4) {
+          case 1 -> ((bytes[offset] & 0xFF));
+          case 2 -> (((bytes[offset] & 0xFF) << 8) | (bytes[offset + 1] & 0xFF));
+          case 3 ->
+              (((bytes[offset] & 0xFF) << 16)
+                  | ((bytes[offset + 1] & 0xFF) << 8)
+                  | (bytes[offset + 2] & 0xFF));
+          case 4 ->
+              ((bytes[offset] << 24)
+                  | ((bytes[offset + 1] & 0xFF) << 16)
+                  | ((bytes[offset + 2] & 0xFF) << 8)
+                  | (bytes[offset + 3] & 0xFF));
+          default -> throw new IllegalStateException("Unexpected value");
+        };
     return new UInt256(limbs, len);
   }
 
@@ -160,9 +172,9 @@ public final class UInt256 {
     }
   }
 
-  /** 
+  /**
    * Convert to BigEndian byte array.
-   * 
+   *
    * @return Big-endian ordered bytes for this UInt256 value.
    */
   public byte[] toBytesBE() {
@@ -180,7 +192,7 @@ public final class UInt256 {
 
   // ---- comparison ----
 
-  /** 
+  /**
    * Is the value 0 ?
    *
    * @return true if this UInt256 value is 0.
@@ -294,18 +306,18 @@ public final class UInt256 {
     }
 
     // --- Shortcut: divisor fits in 64 bits (2 limbs) ---
-    if (n == 2) {
-      long d = ((long) divisor.limbs[1] << 32) | (divisor.limbs[0] & 0xFFFFFFFFL);
-      long rem = 0;
-      // Process from most significant limb downwards
-      for (int i = length - 1; i >= 0; i--) {
-        long cur = (rem << 32) | (limbs[i] & 0xFFFFFFFFL);
-        rem = Long.remainderUnsigned(cur, d);
-      }
-      int lo = (int) rem;
-      int hi = (int) (rem >>> 32);
-      return new UInt256(new int[] {lo, hi});
-    }
+    // if (n == 2) {
+    //   long d = ((long) divisor.limbs[1] << 32) | (divisor.limbs[0] & 0xFFFFFFFFL);
+    //  long rem = 0;
+    // Process from most significant limb downwards
+    // for (int i = length - 1; i >= 0; i--) {
+    //    long cur = (rem << 32) | (limbs[i] & 0xFFFFFFFFL);
+    //    rem = Long.remainderUnsigned(cur, d);
+    //  }
+    //  int lo = (int) rem;
+    //  int hi = (int) (rem >>> 32);
+    //  return new UInt256(new int[] {lo, hi});
+    // }
 
     // --- Knuth Division ---
 
