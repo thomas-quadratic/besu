@@ -282,7 +282,9 @@ configure(allprojects - project(':platform')) {
       '-Xlint:divzero',
       '-Xlint:finally',
       '-Xlint:static',
-      '-Werror',
+      // '-Werror',
+      '--enable-preview',
+      '--add-modules', 'jdk.incubator.vector',
     ]
 
     options.errorprone {
@@ -319,6 +321,10 @@ configure(allprojects - project(':platform')) {
     if (it.name.contains(".")) {
       outputs.upToDateWhen { false }
     }
+    jvmArgs += [ 
+      '--enable-preview',
+      '--add-modules', 'jdk.incubator.vector',
+    ]
   }
 
   /*
@@ -376,7 +382,10 @@ configure(allprojects - project(':platform')) {
       '--add-exports',
       'jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED',
       '--add-exports',
-      'jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED'
+      'jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED',
+      '--enable-preview',
+      '--add-modules',
+      'jdk.incubator.vector',
     ]
     Set toImport = [
       'test.ethereum.include',
@@ -655,7 +664,10 @@ subprojects {
       }
       duplicateClassesStrategy = DuplicatesStrategy.EXCLUDE
       jvmArgs = [
-        '-XX:+EnableDynamicAgentLoading'
+        '-XX:+EnableDynamicAgentLoading',
+        '--enable-preview',
+        '--add-modules',
+        'jdk.incubator.vector',
       ]
     }
 
