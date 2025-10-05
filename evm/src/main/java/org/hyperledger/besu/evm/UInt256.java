@@ -22,16 +22,21 @@ import java.util.Arrays;
 /**
  * 256-bits wide (unsigned) integer class.
  *
- * <p>This class is an optimised version of BigInteger for fixed width 256-bits integers.
- * In contrast to Java int, by default operations interpretes UInt256 as unsigned, with specific signed operations when needed.
+ * <p>This class is an optimised version of BigInteger for fixed width 256-bits integers. In
+ * contrast to Java int, by default operations interpretes UInt256 as unsigned, with specific signed
+ * operations when needed.
  */
 public final class UInt256 {
   // region Internals
   // --------------------------------------------------------------------------
-  // Internally, it is represented as 4 long limbs in little-endian order, that is from least to most significant limbs.
+  // Internally, it is represented as 4 long limbs in little-endian order, that is from least to
+  // most significant limbs.
   // Note that Java's long are themselves big-endian.
   //
-  // Length is used to optimise algorithms, skipping leading zeroes. It should be by default 4, but can be less in cases we know for sure that the 4 - length most significant limbs are zero. This gives optional flexibility for optimisations, for example in loops. In all cases, all 4 limbs are allocated and length can be safely ignored.
+  // Length is used to optimise algorithms, skipping leading zeroes. It should be by default 4, but
+  // can be less in cases we know for sure that the 4 - length most significant limbs are zero. This
+  // gives optional flexibility for optimisations, for example in loops. In all cases, all 4 limbs
+  // are allocated and length can be safely ignored.
 
   /** Fixed size in bytes. */
   public static final int BYTESIZE = 32;
@@ -398,26 +403,27 @@ public final class UInt256 {
   // region Support (private) Algorithms
   // --------------------------------------------------------------------------
   // Lookup table for $\floor{\frac{2^{19} -3 ⋅ 2^8}{d_9 - 256}}$
-  private static final short[] LUT = new short[] {
-    2045, 2037, 2029, 2021, 2013, 2005, 1998, 1990, 1983, 1975, 1968, 1960, 1953, 1946, 1938,
-    1931, 1924, 1917, 1910, 1903, 1896, 1889, 1883, 1876, 1869, 1863, 1856, 1849, 1843, 1836,
-    1830, 1824, 1817, 1811, 1805, 1799, 1792, 1786, 1780, 1774, 1768, 1762, 1756, 1750, 1745,
-    1739, 1733, 1727, 1722, 1716, 1710, 1705, 1699, 1694, 1688, 1683, 1677, 1672, 1667, 1661,
-    1656, 1651, 1646, 1641, 1636, 1630, 1625, 1620, 1615, 1610, 1605, 1600, 1596, 1591, 1586,
-    1581, 1576, 1572, 1567, 1562, 1558, 1553, 1548, 1544, 1539, 1535, 1530, 1526, 1521, 1517,
-    1513, 1508, 1504, 1500, 1495, 1491, 1487, 1483, 1478, 1474, 1470, 1466, 1462, 1458, 1454,
-    1450, 1446, 1442, 1438, 1434, 1430, 1426, 1422, 1418, 1414, 1411, 1407, 1403, 1399, 1396,
-    1392, 1388, 1384, 1381, 1377, 1374, 1370, 1366, 1363, 1359, 1356, 1352, 1349, 1345, 1342,
-    1338, 1335, 1332, 1328, 1325, 1322, 1318, 1315, 1312, 1308, 1305, 1302, 1299, 1295, 1292,
-    1289, 1286, 1283, 1280, 1276, 1273, 1270, 1267, 1264, 1261, 1258, 1255, 1252, 1249, 1246,
-    1243, 1240, 1237, 1234, 1231, 1228, 1226, 1223, 1220, 1217, 1214, 1211, 1209, 1206, 1203,
-    1200, 1197, 1195, 1192, 1189, 1187, 1184, 1181, 1179, 1176, 1173, 1171, 1168, 1165, 1163,
-    1160, 1158, 1155, 1153, 1150, 1148, 1145, 1143, 1140, 1138, 1135, 1133, 1130, 1128, 1125,
-    1123, 1121, 1118, 1116, 1113, 1111, 1109, 1106, 1104, 1102, 1099, 1097, 1095, 1092, 1090,
-    1088, 1086, 1083, 1081, 1079, 1077, 1074, 1072, 1070, 1068, 1066, 1064, 1061, 1059, 1057,
-    1055, 1053, 1051, 1049, 1047, 1044, 1042, 1040, 1038, 1036, 1034, 1032, 1030, 1028, 1026,
-    1024,
-  };
+  private static final short[] LUT =
+      new short[] {
+        2045, 2037, 2029, 2021, 2013, 2005, 1998, 1990, 1983, 1975, 1968, 1960, 1953, 1946, 1938,
+        1931, 1924, 1917, 1910, 1903, 1896, 1889, 1883, 1876, 1869, 1863, 1856, 1849, 1843, 1836,
+        1830, 1824, 1817, 1811, 1805, 1799, 1792, 1786, 1780, 1774, 1768, 1762, 1756, 1750, 1745,
+        1739, 1733, 1727, 1722, 1716, 1710, 1705, 1699, 1694, 1688, 1683, 1677, 1672, 1667, 1661,
+        1656, 1651, 1646, 1641, 1636, 1630, 1625, 1620, 1615, 1610, 1605, 1600, 1596, 1591, 1586,
+        1581, 1576, 1572, 1567, 1562, 1558, 1553, 1548, 1544, 1539, 1535, 1530, 1526, 1521, 1517,
+        1513, 1508, 1504, 1500, 1495, 1491, 1487, 1483, 1478, 1474, 1470, 1466, 1462, 1458, 1454,
+        1450, 1446, 1442, 1438, 1434, 1430, 1426, 1422, 1418, 1414, 1411, 1407, 1403, 1399, 1396,
+        1392, 1388, 1384, 1381, 1377, 1374, 1370, 1366, 1363, 1359, 1356, 1352, 1349, 1345, 1342,
+        1338, 1335, 1332, 1328, 1325, 1322, 1318, 1315, 1312, 1308, 1305, 1302, 1299, 1295, 1292,
+        1289, 1286, 1283, 1280, 1276, 1273, 1270, 1267, 1264, 1261, 1258, 1255, 1252, 1249, 1246,
+        1243, 1240, 1237, 1234, 1231, 1228, 1226, 1223, 1220, 1217, 1214, 1211, 1209, 1206, 1203,
+        1200, 1197, 1195, 1192, 1189, 1187, 1184, 1181, 1179, 1176, 1173, 1171, 1168, 1165, 1163,
+        1160, 1158, 1155, 1153, 1150, 1148, 1145, 1143, 1140, 1138, 1135, 1133, 1130, 1128, 1125,
+        1123, 1121, 1118, 1116, 1113, 1111, 1109, 1106, 1104, 1102, 1099, 1097, 1095, 1092, 1090,
+        1088, 1086, 1083, 1081, 1079, 1077, 1074, 1072, 1070, 1068, 1066, 1064, 1061, 1059, 1057,
+        1055, 1053, 1051, 1049, 1047, 1044, 1042, 1040, 1038, 1036, 1034, 1032, 1030, 1028, 1026,
+        1024,
+      };
 
   private static int nLeadingZeroBits(final long[] x, final int xLen) {
     int offset = xLen - 1;
@@ -512,7 +518,8 @@ public final class UInt256 {
     }
   }
 
-  private static long[] addWithCarry(final long[] x, final int xLen, final long[] y, final int yLen) {
+  private static long[] addWithCarry(
+      final long[] x, final int xLen, final long[] y, final int yLen) {
     // Step 1: Add with carry
     long[] a;
     long[] b;
@@ -572,8 +579,8 @@ public final class UInt256 {
       for (int j = 0; j < xLen; j++, k++) {
         long p0 = y[i] * x[j];
         long p1 = Math.multiplyHigh(y[i], x[j]);
-	if (y[i] < 0) p1 += x[j];
-	if (x[j] < 0) p1 += y[i];
+        if (y[i] < 0) p1 += x[j];
+        if (x[j] < 0) p1 += y[i];
         p0 += carry;
         if (Long.compareUnsigned(p0, carry) < 0) p1++;
         lhs[k] += p0;
@@ -621,12 +628,12 @@ public final class UInt256 {
     long v = reciprocal(x1);
     long p = x1 * v + x0;
     if (Long.compareUnsigned(p, x0) < 0) {
+      v--;
+      if (Long.compareUnsigned(p, x1) >= 0) {
         v--;
-        if (Long.compareUnsigned(p, x1) >= 0) {
-            v--;
-            p -= x1;
-        }
         p -= x1;
+      }
+      p -= x1;
     }
     long t0 = v * x0;
     long t1 = Math.multiplyHigh(v, x0);
@@ -634,9 +641,9 @@ public final class UInt256 {
     if (x0 < 0) t1 += v;
     p += t1;
     if (Long.compareUnsigned(p, t1) < 0) {
-        v--;
-	int cmp = Long.compareUnsigned(p, x1);
-	if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(t0, x0) >= 0))) v--;
+      v--;
+      int cmp = Long.compareUnsigned(p, x1);
+      if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(t0, x0) >= 0))) v--;
     }
     return v;
   }
@@ -651,9 +658,9 @@ public final class UInt256 {
     // wrapping uadd <q1, q0> + <x1, x0> + <1, 0>
     q0 += x[xLen - 2];
     long carry = (Long.compareUnsigned(q0, x[xLen - 2]) < 0) ? 1 : 0;
-    q1 += x[xLen -1] + carry + 1;
+    q1 += x[xLen - 1] + carry + 1;
 
-    x[xLen -2] -= q1 * y;
+    x[xLen - 2] -= q1 * y;
 
     if (Long.compareUnsigned(x[xLen - 2], q0) > 0) {
       q1 -= 1;
@@ -668,12 +675,13 @@ public final class UInt256 {
     return q1;
   }
 
-  private static long div3by2(final long[] x, final int xLen, final long y0, final long y1, final long yInv) {
+  private static long div3by2(
+      final long[] x, final int xLen, final long y0, final long y1, final long yInv) {
     // <x2, x1, x0> divided by <y1, y0>.
     // Works inplace on x, modifying it to hold the remainder.
     // Returns the quotient q.
     // Requires <x2, x1> < <y1, y0> otherwise quotient overflows.
-    long overflow;  // carry or borrow
+    long overflow; // carry or borrow
     long x0 = x[xLen - 3];
     long x1 = x[xLen - 2];
     long x2 = x[xLen - 1];
@@ -681,14 +689,14 @@ public final class UInt256 {
     // wrapping umul x2 * yInv
     long q0 = x2 * yInv;
     long q1 = Math.multiplyHigh(x2, yInv);
-    if (x2 < 0) q1 += yInv ;
+    if (x2 < 0) q1 += yInv;
     if (yInv < 0) q1 += x2;
 
     // wrapping uadd <q1, q0> + <x2, x1>
     q0 = q0 + x1;
     overflow = (Long.compareUnsigned(q0, x1) < 0) ? 1 : 0;
     q1 = q1 + x2 + overflow;
-    
+
     x[xLen - 2] -= q1 * y1;
 
     // wrapping umul q1 * y0
@@ -708,10 +716,10 @@ public final class UInt256 {
 
     q1 += 1;
     if (Long.compareUnsigned(x[xLen - 2], q0) >= 0) {
-        q1 -= 1;
-	x[xLen - 3] += y0;
-        overflow = (Long.compareUnsigned(x[xLen - 3], y0) < 0) ? 1 : 0;
-	x[xLen - 2] += y1 + overflow;
+      q1 -= 1;
+      x[xLen - 3] += y0;
+      overflow = (Long.compareUnsigned(x[xLen - 3], y0) < 0) ? 1 : 0;
+      x[xLen - 2] += y1 + overflow;
     }
 
     int cmp = Long.compareUnsigned(x[xLen - 2], y1);
@@ -732,20 +740,22 @@ public final class UInt256 {
     }
   }
 
-  private static void modNby2(final long[] x, final int xLen, final long y0, final long y1, final long yInv) {
+  private static void modNby2(
+      final long[] x, final int xLen, final long y0, final long y1, final long yInv) {
     for (int i = xLen - 1; i >= 2; i--) {
       // if <x+1, x+0> >= <y1, y0>, overflows, so must substract <y1, y0> first
       int cmp = Long.compareUnsigned(x[i], y1);
       if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(x[i - 1], y0) >= 0))) {
-	long borrow = (Long.compareUnsigned(y0, x[i - 1]) > 0) ? 1 : 0;
-	x[i - 1] -= y0;
+        long borrow = (Long.compareUnsigned(y0, x[i - 1]) > 0) ? 1 : 0;
+        x[i - 1] -= y0;
         x[i] -= (y1 + borrow);
       }
       div3by2(x, i + 1, y0, y1, yInv);
     }
   }
 
-  private static void modNbyM(final long[] x, final int xLen, final long[] y, final int yLen, final long yInv) {
+  private static void modNbyM(
+      final long[] x, final int xLen, final long[] y, final int yLen, final long yInv) {
     long yn1 = y[yLen - 1];
     long yn0 = y[yLen - 2];
     int m = xLen - yLen;
@@ -756,9 +766,9 @@ public final class UInt256 {
       // Unlikely overflow 3x2 case: x[..2] == y
       if (((yn1 ^ x[j + yLen]) | (yn0 ^ x[j + yLen - 1])) == 0) {
         // q = <0, 1> in this case, so multiply is trivial.
-	// Still need to substract (and add back if needed).
+        // Still need to substract (and add back if needed).
         for (int i = 0; i < yLen; i++) {
-	  tmp = (Long.compareUnsigned(x[i + j], borrow) < 0) ? 1 : 0;
+          tmp = (Long.compareUnsigned(x[i + j], borrow) < 0) ? 1 : 0;
           x[j + i + 1] -= borrow;
           borrow = tmp;
           if (Long.compareUnsigned(x[j + i + 1], y[i]) < 0) borrow++;
@@ -766,7 +776,7 @@ public final class UInt256 {
         }
         tmp = (Long.compareUnsigned(x[j + yLen], borrow) < 0) ? 1 : 0;
         x[j + yLen] -= borrow;
-	borrow = tmp;
+        borrow = tmp;
       } else {
         long q = div3by2(x, j + yLen + 1, yn0, yn1, yInv);
 
@@ -774,8 +784,8 @@ public final class UInt256 {
         for (int i = 0; i < yLen - 2; i++) {
           long p0 = y[i] * q;
           long p1 = Math.multiplyHigh(y[i], q);
-	  if (y[i] < 0) p1 += q;
-	  if (q < 0) p1 += y[i];
+          if (y[i] < 0) p1 += q;
+          if (q < 0) p1 += y[i];
           tmp = (Long.compareUnsigned(x[j + i], borrow) < 0) ? p1 + 1 : p1;
           x[j + i] -= borrow;
           borrow = tmp;
@@ -784,7 +794,7 @@ public final class UInt256 {
         }
         tmp = (Long.compareUnsigned(x[j + yLen - 2], borrow) < 0) ? 1 : 0;
         x[j + yLen - 2] -= borrow;
-	borrow = tmp;
+        borrow = tmp;
         tmp = (Long.compareUnsigned(x[j + yLen - 1], borrow) < 0) ? 1 : 0;
         x[j + yLen - 1] -= borrow;
         borrow = tmp;
@@ -793,14 +803,14 @@ public final class UInt256 {
       if (borrow != 0) { // unlikely
         // Add back
         long carry = 0;
-	int i;
+        int i;
         for (i = 0; i < yLen; i++) {
           x[j + i] = x[j + i] + carry;
           carry = (Long.compareUnsigned(x[j + i], carry) < 0) ? 1 : 0;
           x[j + i] = x[j + i] + y[i];
           if (Long.compareUnsigned(x[j + i], carry) < 0) carry++;
         }
-	while ((carry != 0) && (i < xLen)) {
+        while ((carry != 0) && (i < xLen)) {
           x[j + i] = x[j + i] + carry;
           carry = (Long.compareUnsigned(x[j + i], carry) < 0) ? 1 : 0;
         }
@@ -859,7 +869,7 @@ public final class UInt256 {
     shiftRightInto(result, uLimbs, modLen, shift);
     return result;
   }
-    
+
   // --------------------------------------------------------------------------
   // endregion
 }
