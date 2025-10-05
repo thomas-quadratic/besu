@@ -822,14 +822,6 @@ public final class UInt256 {
     long[] result = new long[N_LIMBS];
     int divLen = dividend.length - nLeadingZeroLimbs(dividend, dividend.length);
     int modLen = modulus.length - nLeadingZeroLimbs(modulus, modulus.length);
-    StringBuilder sbu = new StringBuilder("0x");
-    for (int i = divLen - 1; i >= 0; i--) {
-      sbu.append(Long.toHexString(dividend[i]));
-    }
-    StringBuilder sbv = new StringBuilder("0x");
-    for (int i = modLen - 1; i >= 0; i--) {
-      sbv.append(Long.toHexString(modulus[i]));
-    }
 
     // Shortcuts
     if (modLen == 0) return result;
