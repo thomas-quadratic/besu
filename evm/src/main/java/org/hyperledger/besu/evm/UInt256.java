@@ -397,16 +397,38 @@ public final class UInt256 {
 
   // region Support (private) Algorithms
   // --------------------------------------------------------------------------
+  // Lookup table for $\floor{\frac{2^{19} -3 ⋅ 2^8}{d_9 - 256}}$
+  private static final short[] LUT = new short[] {
+    2045, 2037, 2029, 2021, 2013, 2005, 1998, 1990, 1983, 1975, 1968, 1960, 1953, 1946, 1938,
+    1931, 1924, 1917, 1910, 1903, 1896, 1889, 1883, 1876, 1869, 1863, 1856, 1849, 1843, 1836,
+    1830, 1824, 1817, 1811, 1805, 1799, 1792, 1786, 1780, 1774, 1768, 1762, 1756, 1750, 1745,
+    1739, 1733, 1727, 1722, 1716, 1710, 1705, 1699, 1694, 1688, 1683, 1677, 1672, 1667, 1661,
+    1656, 1651, 1646, 1641, 1636, 1630, 1625, 1620, 1615, 1610, 1605, 1600, 1596, 1591, 1586,
+    1581, 1576, 1572, 1567, 1562, 1558, 1553, 1548, 1544, 1539, 1535, 1530, 1526, 1521, 1517,
+    1513, 1508, 1504, 1500, 1495, 1491, 1487, 1483, 1478, 1474, 1470, 1466, 1462, 1458, 1454,
+    1450, 1446, 1442, 1438, 1434, 1430, 1426, 1422, 1418, 1414, 1411, 1407, 1403, 1399, 1396,
+    1392, 1388, 1384, 1381, 1377, 1374, 1370, 1366, 1363, 1359, 1356, 1352, 1349, 1345, 1342,
+    1338, 1335, 1332, 1328, 1325, 1322, 1318, 1315, 1312, 1308, 1305, 1302, 1299, 1295, 1292,
+    1289, 1286, 1283, 1280, 1276, 1273, 1270, 1267, 1264, 1261, 1258, 1255, 1252, 1249, 1246,
+    1243, 1240, 1237, 1234, 1231, 1228, 1226, 1223, 1220, 1217, 1214, 1211, 1209, 1206, 1203,
+    1200, 1197, 1195, 1192, 1189, 1187, 1184, 1181, 1179, 1176, 1173, 1171, 1168, 1165, 1163,
+    1160, 1158, 1155, 1153, 1150, 1148, 1145, 1143, 1140, 1138, 1135, 1133, 1130, 1128, 1125,
+    1123, 1121, 1118, 1116, 1113, 1111, 1109, 1106, 1104, 1102, 1099, 1097, 1095, 1092, 1090,
+    1088, 1086, 1083, 1081, 1079, 1077, 1074, 1072, 1070, 1068, 1066, 1064, 1061, 1059, 1057,
+    1055, 1053, 1051, 1049, 1047, 1044, 1042, 1040, 1038, 1036, 1034, 1032, 1030, 1028, 1026,
+    1024,
+  };
+
   private static int nLeadingZeroBits(final long[] x, final int xLen) {
-    int leadingIndex = xLen - 1;
-    while ((leadingIndex >= 0) && (x[leadingIndex] == 0)) leadingIndex--;
-    return N_BITS_PER_LIMB * (xLen - leadingIndex - 1) + Long.numberOfLeadingZeros(x[leadingIndex]);
+    int offset = xLen - 1;
+    while ((offset >= 0) && (x[offset] == 0)) offset--;
+    return N_BITS_PER_LIMB * (xLen - offset - 1) + Long.numberOfLeadingZeros(x[offset]);
   }
 
-  private static int nLeadingZeroLimbs(final long[] x, final int maxLength) {
-    int offset = maxLength - 1;
+  private static int nLeadingZeroLimbs(final long[] x, final int xLen) {
+    int offset = xLen - 1;
     while ((offset >= 0) && (x[offset] == 0)) offset--;
-    return offset + 1;
+    return xLen - offset - 1;
   }
 
   private static int compareLimbs(final long[] a, final int aLen, final long[] b, final int bLen) {
@@ -510,18 +532,19 @@ public final class UInt256 {
     long[] sum = new long[aLen + 1];
     long carry = 0;
     for (int i = 0; i < bLen; i++) {
-      long s = a[i] + carry;
-      carry = (Long.compareUnsigned(s, a[i]) < 0) ? 1 : 0;
-      s += b[i];
-      if (Long.compareUnsigned(s, b[i]) < 0) carry++;
+      sum[i] = a[i] + carry;
+      carry = (Long.compareUnsigned(sum[i], a[i]) < 0) ? 1 : 0;
+      sum[i] += b[i];
+      if (Long.compareUnsigned(sum[i], b[i]) < 0) carry++;
     }
     int i = bLen;
-    while ((carry != 0) && (i < aLen + 1)) {
+    while ((carry != 0) && (i < aLen)) {
       sum[i] = a[i] + carry;
       carry = (Long.compareUnsigned(sum[i], carry) < 0) ? 1 : 0;
       i++;
     }
     for (; i < aLen; i++) sum[i] = a[i];
+    sum[aLen] = carry;
     return sum;
   }
 
@@ -543,12 +566,14 @@ public final class UInt256 {
       yLen = bLen;
     }
     long[] lhs = new long[xLen + yLen + 1];
-    for (int i = 0; i < y.length; i++) {
+    for (int i = 0; i < yLen; i++) {
       long carry = 0;
       int k = i;
-      for (int j = 0; j < x.length; j++, k++) {
+      for (int j = 0; j < xLen; j++, k++) {
         long p0 = y[i] * x[j];
         long p1 = Math.multiplyHigh(y[i], x[j]);
+	if (y[i] < 0) p1 += x[j];
+	if (x[j] < 0) p1 += y[i];
         p0 += carry;
         if (Long.compareUnsigned(p0, carry) < 0) p1++;
         lhs[k] += p0;
@@ -557,27 +582,71 @@ public final class UInt256 {
       }
 
       // propagate leftover carry
-      while (carry != 0 && k < lhs.length) {
+      while (carry != 0 && k < lhs.length - 1) {
         lhs[k] += carry;
         carry = (Long.compareUnsigned(lhs[k], carry) < 0) ? 1 : 0;
         k++;
       }
+      lhs[lhs.length - 1] = carry;
     }
     return lhs;
   }
 
   private static long reciprocal(final long x) {
-    return x;
+    // Unchecked: x >= (1 << 63)
+    long x0 = x & 1L;
+    int x9 = (int) (x >>> 55);
+    long x40 = 1 + (x >>> 24);
+    long x63 = (x + 1) >>> 1;
+    long v0 = LUT[x9 - 256] & 0xFFFFL;
+    long v1 = (v0 << 11) - ((v0 * v0 * x40) >>> 40) - 1;
+    long v2 = (v1 << 13) + ((v1 * ((1L << 60) - v1 * x40)) >>> 47);
+    long e = ((v2 >>> 1) & (-x0)) - v2 * x63;
+    long s = Math.multiplyHigh(v2, e);
+    if (e < 0) s += v2;
+    long v3 = (s >>> 1) + (v2 << 31);
+    long t0 = v3 * x;
+    long t1 = Math.multiplyHigh(v3, x);
+    if (v3 < 0) t1 += x;
+    if (x < 0) t1 += v3;
+    t0 += x;
+    if (Long.compareUnsigned(t0, x) < 0) t1++;
+    t1 += x;
+    long v4 = v3 - t1;
+    return v4;
   }
 
   private static long reciprocal(final long x0, final long x1) {
-    return x0 + x1;
+    // Unchecked: <x1, x0> >= (1 << 127)
+    long v = reciprocal(x1);
+    long p = x1 * v + x0;
+    if (Long.compareUnsigned(p, x0) < 0) {
+        v--;
+        if (Long.compareUnsigned(p, x1) >= 0) {
+            v--;
+            p -= x1;
+        }
+        p -= x1;
+    }
+    long t0 = v * x0;
+    long t1 = Math.multiplyHigh(v, x0);
+    if (v < 0) t1 += x0;
+    if (x0 < 0) t1 += v;
+    p += t1;
+    if (Long.compareUnsigned(p, t1) < 0) {
+        v--;
+	int cmp = Long.compareUnsigned(p, x1);
+	if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(t0, x0) >= 0))) v--;
+    }
+    return v;
   }
 
   private static long div2by1(final long[] x, final int xLen, final long y, final long yInv) {
     // wrapping umul x1 * yInv
     long q0 = x[xLen - 1] * yInv;
     long q1 = Math.multiplyHigh(x[xLen - 1], yInv);
+    if (x[xLen - 1] < 0) q1 += yInv;
+    if (yInv < 0) q1 += x[xLen - 1];
 
     // wrapping uadd <q1, q0> + <x1, x0> + <1, 0>
     q0 += x[xLen - 2];
@@ -612,6 +681,8 @@ public final class UInt256 {
     // wrapping umul x2 * yInv
     long q0 = x2 * yInv;
     long q1 = Math.multiplyHigh(x2, yInv);
+    if (x2 < 0) q1 += yInv ;
+    if (yInv < 0) q1 += x2;
 
     // wrapping uadd <q1, q0> + <x2, x1>
     q0 = q0 + x1;
@@ -623,6 +694,8 @@ public final class UInt256 {
     // wrapping umul q1 * y0
     long t0 = q1 * y0;
     long t1 = Math.multiplyHigh(q1, y0);
+    if (q1 < 0) t1 += y0;
+    if (y0 < 0) t1 += q1;
 
     // wrapping sub <r1, x0> − <t1, t0> − <y1, y0>
     overflow = Long.compareUnsigned(x0, t0) < 0 ? 1 : 0;
@@ -634,7 +707,7 @@ public final class UInt256 {
     x[xLen - 2] -= (y1 + overflow);
 
     q1 += 1;
-    if (x[xLen - 2] >= q0) {
+    if (Long.compareUnsigned(x[xLen - 2], q0) >= 0) {
         q1 -= 1;
 	x[xLen - 3] += y0;
         overflow = (Long.compareUnsigned(x[xLen - 3], y0) < 0) ? 1 : 0;
@@ -660,7 +733,7 @@ public final class UInt256 {
   }
 
   private static void modNby2(final long[] x, final int xLen, final long y0, final long y1, final long yInv) {
-    for (int i = xLen - 1; i >= 1; i--) {
+    for (int i = xLen - 1; i >= 2; i--) {
       // if <x+1, x+0> >= <y1, y0>, overflows, so must substract <y1, y0> first
       int cmp = Long.compareUnsigned(x[i], y1);
       if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(x[i - 1], y0) >= 0))) {
@@ -677,6 +750,7 @@ public final class UInt256 {
     long yn0 = y[yLen - 2];
     int m = xLen - yLen;
     for (int j = m - 1; j >= 0; j--) {
+      long tmp;
       long borrow = 0;
 
       // Unlikely overflow 3x2 case: x[..2] == y
@@ -684,13 +758,15 @@ public final class UInt256 {
         // q = <0, 1> in this case, so multiply is trivial.
 	// Still need to substract (and add back if needed).
         for (int i = 0; i < yLen; i++) {
+	  tmp = (Long.compareUnsigned(x[i + j], borrow) < 0) ? 1 : 0;
           x[j + i + 1] -= borrow;
-          borrow = (Long.compareUnsigned(x[i + j], borrow) < 0) ? 1 : 0;
-          x[j + i + 1] -= y[i];
+          borrow = tmp;
           if (Long.compareUnsigned(x[j + i + 1], y[i]) < 0) borrow++;
+          x[j + i + 1] -= y[i];
         }
+        tmp = (Long.compareUnsigned(x[j + yLen], borrow) < 0) ? 1 : 0;
         x[j + yLen] -= borrow;
-        borrow = (Long.compareUnsigned(x[j + yLen], borrow) < 0) ? 1 : 0;
+	borrow = tmp;
       } else {
         long q = div3by2(x, j + yLen + 1, yn0, yn1, yInv);
 
@@ -698,15 +774,20 @@ public final class UInt256 {
         for (int i = 0; i < yLen - 2; i++) {
           long p0 = y[i] * q;
           long p1 = Math.multiplyHigh(y[i], q);
+	  if (y[i] < 0) p1 += q;
+	  if (q < 0) p1 += y[i];
+          tmp = (Long.compareUnsigned(x[j + i], borrow) < 0) ? p1 + 1 : p1;
           x[j + i] -= borrow;
-          borrow = (Long.compareUnsigned(x[j + i], borrow) < 0) ? p1 + 1 : p1;
-          x[j + i] -= p0;
+          borrow = tmp;
           if (Long.compareUnsigned(x[j + i], p0) < 0) borrow++;
+          x[j + i] -= p0;
         }
+        tmp = (Long.compareUnsigned(x[j + yLen - 2], borrow) < 0) ? 1 : 0;
+        x[j + yLen - 2] -= borrow;
+	borrow = tmp;
+        tmp = (Long.compareUnsigned(x[j + yLen - 1], borrow) < 0) ? 1 : 0;
         x[j + yLen - 1] -= borrow;
-        borrow = (Long.compareUnsigned(x[j + yLen - 1], borrow) < 0) ? 1 : 0;
-        x[j + yLen] -= borrow;
-        borrow = (Long.compareUnsigned(x[j + yLen], borrow) < 0) ? 1 : 0;
+        borrow = tmp;
       }
 
       if (borrow != 0) { // unlikely
@@ -731,6 +812,14 @@ public final class UInt256 {
     long[] result = new long[N_LIMBS];
     int divLen = dividend.length - nLeadingZeroLimbs(dividend, dividend.length);
     int modLen = modulus.length - nLeadingZeroLimbs(modulus, modulus.length);
+    StringBuilder sbu = new StringBuilder("0x");
+    for (int i = divLen - 1; i >= 0; i--) {
+      sbu.append(Long.toHexString(dividend[i]));
+    }
+    StringBuilder sbv = new StringBuilder("0x");
+    for (int i = modLen - 1; i >= 0; i--) {
+      sbv.append(Long.toHexString(modulus[i]));
+    }
 
     // Shortcuts
     if (modLen == 0) return result;
@@ -755,7 +844,6 @@ public final class UInt256 {
     shiftLeftInto(uLimbs, dividend, divLen, shift);
     long[] vLimbs = new long[modLen];
     shiftLeftInto(vLimbs, modulus, modLen, shift);
-
     // -- Divide
     if (modLen == 1) {
       long inv = reciprocal(vLimbs[0]);
