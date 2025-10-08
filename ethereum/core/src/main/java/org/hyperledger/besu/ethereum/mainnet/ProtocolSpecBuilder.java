@@ -330,7 +330,7 @@ public class ProtocolSpecBuilder {
     final GasLimitCalculator gasLimitCalculator =
         gasLimitCalculatorBuilder.apply(feeMarket, gasCalculator, blobSchedule);
     final EVM evm = evmBuilder.apply(gasCalculator, evmConfiguration);
-    LOGGER.info(
+    LOGGER.debug(
         "Opcode optimizations {} for milestone {}",
         evm.getEvmConfiguration().enableOptimizedOpcodes() ? "enabled" : "disabled",
         hardforkId);
