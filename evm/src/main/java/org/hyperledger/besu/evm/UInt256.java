@@ -319,7 +319,9 @@ public final class UInt256 {
   public UInt256 add(final UInt256 other) {
     if (other.isZero()) return this;
     if (this.isZero()) return other;
-    return new UInt256(addWithCarry(this.limbs, this.length, other.limbs, other.length));
+    final int[] sum = addWithCarry(this.limbs, this.length, other.limbs, other.length);
+    final int[] result = Arrays.copyOf(sum, N_LIMBS);
+    return new UInt256(result);
   }
 
   /**

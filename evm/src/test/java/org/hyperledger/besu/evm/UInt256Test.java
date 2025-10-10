@@ -113,7 +113,7 @@ public class UInt256Test {
   void testLeftShift() {
     UInt256 a = UInt256.fromInt(1);
     UInt256 result = a.shiftLeft(32);
-    UInt256 expected = new UInt256( new int[]{0, 1, 0, 0, 0, 0, 0, 0});
+    UInt256 expected = new UInt256(new int[] {0, 1, 0, 0, 0, 0, 0, 0});
     assertThat(result).isEqualTo(expected);
   }
 
@@ -389,6 +389,26 @@ public class UInt256Test {
         }
       }
       assertThat(remainder).isEqualTo(expected);
+    }
+  }
+
+  @Test
+  public void add() {
+    final Random random = new Random(42);
+    for (int i = 0; i < SAMPLE_SIZE; i++) {
+      int aSize = random.nextInt(1, 33);
+      int bSize = random.nextInt(1, 33);
+      final byte[] aArray = new byte[aSize];
+      final byte[] bArray = new byte[bSize];
+      random.nextBytes(aArray);
+      random.nextBytes(bArray);
+      BigInteger aInt = new BigInteger(1, aArray);
+      BigInteger bInt = new BigInteger(1, bArray);
+      UInt256 a = UInt256.fromBytesBE(aArray);
+      UInt256 b = UInt256.fromBytesBE(bArray);
+      Bytes32 result = Bytes32.leftPad(Bytes.wrap(a.add(b).toBytesBE()));
+      Bytes32 expected = bigIntTo32B(aInt.add(bInt));
+      assertThat(result).isEqualTo(expected);
     }
   }
 }
