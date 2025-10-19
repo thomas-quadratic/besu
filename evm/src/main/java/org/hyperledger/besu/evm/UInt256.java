@@ -783,9 +783,7 @@ public final class UInt256 {
         // Multiply-subtract: already have highest 2 limbs
         for (int i = 0; i < yLen - 2; i++) {
           long p0 = y[i] * q;
-          long p1 = Math.multiplyHigh(y[i], q);
-          if (y[i] < 0) p1 += q;
-          if (q < 0) p1 += y[i];
+          long p1 = Math.unsignedMultiplyHigh(y[i], q);
           tmp = (Long.compareUnsigned(x[j + i], borrow) < 0) ? p1 + 1 : p1;
           x[j + i] -= borrow;
           borrow = tmp;
@@ -808,7 +806,7 @@ public final class UInt256 {
           x[j + i] = x[j + i] + carry;
           carry = (Long.compareUnsigned(x[j + i], carry) < 0) ? 1 : 0;
           x[j + i] = x[j + i] + y[i];
-          if (Long.compareUnsigned(x[j + i], carry) < 0) carry++;
+          if (Long.compareUnsigned(x[j + i], y[i]) < 0) carry++;
         }
         while ((carry != 0) && (i < xLen)) {
           x[j + i] = x[j + i] + carry;

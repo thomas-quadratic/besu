@@ -282,6 +282,22 @@ public class UInt256Test {
   }
 
   @Test
+  public void ExecutionSpecStateTest_453() {
+    byte[] xArr = new byte[] {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -2}; 
+    byte[] mArr = new byte[] {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}; 
+    BigInteger xbig = new BigInteger(1, xArr);
+    BigInteger ybig = new BigInteger(1, xArr);
+    BigInteger mbig = new BigInteger(1, mArr);
+    UInt256 x = UInt256.fromBytesBE(xArr);
+    UInt256 y = UInt256.fromBytesBE(xArr);
+    UInt256 m = UInt256.fromBytesBE(mArr);
+    Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(x.addMod(y, m).toBytesBE()));
+    Bytes32 expected =
+        BigInteger.ZERO.compareTo(mbig) == 0 ? Bytes32.ZERO : bigIntTo32B(xbig.add(ybig).mod(mbig));
+    assertThat(remainder).isEqualTo(expected);
+  }
+
+  @Test
   public void addMod() {
     final Random random = new Random(42);
     for (int i = 0; i < SAMPLE_SIZE; i++) {
