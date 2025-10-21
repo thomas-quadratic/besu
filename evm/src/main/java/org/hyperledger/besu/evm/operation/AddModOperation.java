@@ -64,6 +64,7 @@ public class AddModOperation extends AbstractFixedCostOperation {
     }
 
     frame.pushStackItem(resultBytes);
+    System.out.println(String.format("%s + %s %% %s = %s", value0, value1, value2, resultBytes));
     return addModSuccess;
   }
 }

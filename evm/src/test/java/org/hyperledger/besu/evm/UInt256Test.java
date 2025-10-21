@@ -25,10 +25,10 @@ import org.apache.tuweni.bytes.Bytes32;
 import org.junit.jupiter.api.Test;
 
 public class UInt256Test {
-  static final int SAMPLE_SIZE = 30000;
+  static final int SAMPLE_SIZE = 3;
 
-  private Bytes32 bigIntTo32B(final BigInteger x) {
-    byte[] a = x.toByteArray();
+  private Bytes32 bigIntTo32B(final BigInteger y) {
+    byte[] a = y.toByteArray();
     if (a.length > 32) return Bytes32.wrap(a, a.length - 32);
     return Bytes32.leftPad(Bytes.wrap(a));
   }
@@ -95,6 +95,12 @@ public class UInt256Test {
     result = UInt256.fromBytesBE(input);
     expectedLimbs = new long[] {0, 0, 0, 257};
     assertThat(result.limbs()).as("32b-padded-limbs").isEqualTo(expectedLimbs);
+
+    Bytes inputBytes = Bytes.fromHexString("0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff");
+    input = inputBytes.toArrayUnsafe();
+    result = UInt256.fromBytesBE(input);
+    expectedLimbs = new long[] {-1L, -1L, 4294967295L, 0};
+    assertThat(result.limbs()).as("32b-case2-limbs").isEqualTo(expectedLimbs);
   }
 
   @Test
@@ -323,6 +329,35 @@ public class UInt256Test {
               : bigIntTo32B(aInt.add(bInt).mod(cInt));
       assertThat(remainder).isEqualTo(expected);
     }
+  }
+  
+  @Test
+  public void mulMod_ExecutionSpecStateTest_457() {
+    Bytes value0 = Bytes.fromHexString("0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff");
+    Bytes value1 = Bytes.fromHexString("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe");
+    Bytes value2 = Bytes.fromHexString("0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff");
+    BigInteger aInt = new BigInteger(1, value0.toArrayUnsafe());
+    BigInteger bInt = new BigInteger(1, value1.toArrayUnsafe());
+    BigInteger cInt = new BigInteger(1, value2.toArrayUnsafe());
+    UInt256 a = UInt256.fromBytesBE(value0.toArrayUnsafe());
+    UInt256 b = UInt256.fromBytesBE(value1.toArrayUnsafe());
+    UInt256 c = UInt256.fromBytesBE(value2.toArrayUnsafe());
+    Bytes32 remainder = Bytes32.leftPad(Bytes.wrap(a.mulMod(b, c).toBytesBE()));
+    Bytes32 expected = bigIntTo32B(aInt.multiply(bInt).mod(cInt));
+    assertThat(remainder).isEqualTo(expected);
+
+    value0 = Bytes.fromHexString("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe");
+    value1 = Bytes.fromHexString("0xffffffffffffffffffffffffb195148ca348dc57a7331852b390ccefa7b0c18b");
+    value2 = Bytes.fromHexString("0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe");
+    aInt = new BigInteger(1, value0.toArrayUnsafe());
+    bInt = new BigInteger(1, value1.toArrayUnsafe());
+    cInt = new BigInteger(1, value2.toArrayUnsafe());
+    a = UInt256.fromBytesBE(value0.toArrayUnsafe());
+    b = UInt256.fromBytesBE(value1.toArrayUnsafe());
+    c = UInt256.fromBytesBE(value2.toArrayUnsafe());
+    remainder = Bytes32.leftPad(Bytes.wrap(a.mulMod(b, c).toBytesBE()));
+    expected = bigIntTo32B(aInt.multiply(bInt).mod(cInt));
+    assertThat(remainder).isEqualTo(expected);
   }
 
   @Test

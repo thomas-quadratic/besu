@@ -61,7 +61,7 @@ public class SModOperation extends AbstractFixedCostOperation {
       resultBytes = Bytes.wrap(b0.signedMod(b1).toBytesBE());
     }
     frame.pushStackItem(resultBytes);
-
+    System.out.println(String.format("signed %s %% %s = %s", value0, value1, resultBytes));
     return smodSuccess;
   }
 }

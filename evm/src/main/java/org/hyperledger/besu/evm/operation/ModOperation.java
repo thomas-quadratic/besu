@@ -60,6 +60,7 @@ public class ModOperation extends AbstractFixedCostOperation {
       resultBytes = Bytes.wrap(b0.mod(b1).toBytesBE());
     }
     frame.pushStackItem(resultBytes);
+    System.out.println(String.format("%s %% %s = %s", value0, value1, resultBytes));
     return modSuccess;
   }
 }

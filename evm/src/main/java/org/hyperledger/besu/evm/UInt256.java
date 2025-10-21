@@ -331,7 +331,7 @@ public final class UInt256 {
    */
   public UInt256 mul(final UInt256 other) {
     if (this.isZero() || other.isZero()) return ZERO;
-    long[] prod = addMul(this.limbs, this.length, other.limbs, other.length);
+    long[] prod = multiplyLimbs(this.limbs, this.length, other.limbs, other.length);
     long[] result = Arrays.copyOf(prod, N_LIMBS);
     return new UInt256(result, Math.min(N_LIMBS, result.length));
   }
@@ -392,7 +392,7 @@ public final class UInt256 {
    */
   public UInt256 mulMod(final UInt256 other, final UInt256 modulus) {
     if (this.isZero() || other.isZero() || modulus.isZero()) return ZERO;
-    long[] result = addMul(this.limbs, this.length, other.limbs, other.length);
+    long[] result = multiplyLimbs(this.limbs, this.length, other.limbs, other.length);
     result = knuthRemainder(result, modulus.limbs);
     return new UInt256(result, modulus.length);
   }
@@ -555,7 +555,7 @@ public final class UInt256 {
     return sum;
   }
 
-  private static long[] addMul(final long[] a, final int aLen, final long[] b, final int bLen) {
+  private static long[] multiplyLimbs(final long[] a, final int aLen, final long[] b, final int bLen) {
     // Shortest in outer loop, swap if needed
     long[] x;
     int xLen;
@@ -578,9 +578,7 @@ public final class UInt256 {
       int k = i;
       for (int j = 0; j < xLen; j++, k++) {
         long p0 = y[i] * x[j];
-        long p1 = Math.multiplyHigh(y[i], x[j]);
-        if (y[i] < 0) p1 += x[j];
-        if (x[j] < 0) p1 += y[i];
+        long p1 = Math.unsignedMultiplyHigh(y[i], x[j]);
         p0 += carry;
         if (Long.compareUnsigned(p0, carry) < 0) p1++;
         lhs[k] += p0;
@@ -589,12 +587,10 @@ public final class UInt256 {
       }
 
       // propagate leftover carry
-      while (carry != 0 && k < lhs.length - 1) {
+      for (; (carry != 0) && (k < lhs.length); k++) {
         lhs[k] += carry;
         carry = (Long.compareUnsigned(lhs[k], carry) < 0) ? 1 : 0;
-        k++;
       }
-      lhs[lhs.length - 1] = carry;
     }
     return lhs;
   }
@@ -609,13 +605,10 @@ public final class UInt256 {
     long v1 = (v0 << 11) - ((v0 * v0 * x40) >>> 40) - 1;
     long v2 = (v1 << 13) + ((v1 * ((1L << 60) - v1 * x40)) >>> 47);
     long e = ((v2 >>> 1) & (-x0)) - v2 * x63;
-    long s = Math.multiplyHigh(v2, e);
-    if (e < 0) s += v2;
+    long s = Math.unsignedMultiplyHigh(v2, e);
     long v3 = (s >>> 1) + (v2 << 31);
     long t0 = v3 * x;
-    long t1 = Math.multiplyHigh(v3, x);
-    if (v3 < 0) t1 += x;
-    if (x < 0) t1 += v3;
+    long t1 = Math.unsignedMultiplyHigh(v3, x);
     t0 += x;
     if (Long.compareUnsigned(t0, x) < 0) t1++;
     t1 += x;
@@ -636,9 +629,7 @@ public final class UInt256 {
       p -= x1;
     }
     long t0 = v * x0;
-    long t1 = Math.multiplyHigh(v, x0);
-    if (v < 0) t1 += x0;
-    if (x0 < 0) t1 += v;
+    long t1 = Math.unsignedMultiplyHigh(v, x0);
     p += t1;
     if (Long.compareUnsigned(p, t1) < 0) {
       v--;
@@ -651,13 +642,12 @@ public final class UInt256 {
   private static long div2by1(final long[] x, final int xLen, final long y, final long yInv) {
     // wrapping umul x1 * yInv
     long q0 = x[xLen - 1] * yInv;
-    long q1 = Math.multiplyHigh(x[xLen - 1], yInv);
-    if (x[xLen - 1] < 0) q1 += yInv;
-    if (yInv < 0) q1 += x[xLen - 1];
+    long q1 = Math.unsignedMultiplyHigh(x[xLen - 1], yInv);
 
     // wrapping uadd <q1, q0> + <x1, x0> + <1, 0>
-    q0 += x[xLen - 2];
-    long carry = (Long.compareUnsigned(q0, x[xLen - 2]) < 0) ? 1 : 0;
+    long sum = q0 + x[xLen - 2];
+    long carry = ((q0 & x[xLen - 2]) | ((q0 | x[xLen -2]) & ~sum)) >>> 63;
+    q0 = sum;
     q1 += x[xLen - 1] + carry + 1;
 
     x[xLen - 2] -= q1 * y;
@@ -682,53 +672,55 @@ public final class UInt256 {
     // Returns the quotient q.
     // Requires <x2, x1> < <y1, y0> otherwise quotient overflows.
     long overflow; // carry or borrow
+    long res;  // sum or diff
     long x0 = x[xLen - 3];
     long x1 = x[xLen - 2];
     long x2 = x[xLen - 1];
 
-    // wrapping umul x2 * yInv
+    // <q1, q0> = x2 * yInv + <x2, x1>
     long q0 = x2 * yInv;
-    long q1 = Math.multiplyHigh(x2, yInv);
-    if (x2 < 0) q1 += yInv;
-    if (yInv < 0) q1 += x2;
-
-    // wrapping uadd <q1, q0> + <x2, x1>
-    q0 = q0 + x1;
-    overflow = (Long.compareUnsigned(q0, x1) < 0) ? 1 : 0;
+    long q1 = Math.unsignedMultiplyHigh(x2, yInv);
+    res = q0 + x1;
+    overflow = ((q0 & x1) | ((q0 | x1) & ~res)) >>> 63;
+    q0 = res;
     q1 = q1 + x2 + overflow;
 
+    // r1 <- x1 - q1 * y1 mod B
     x[xLen - 2] -= q1 * y1;
 
-    // wrapping umul q1 * y0
+    // wrapping sub <r1, x0> − q1*y0 − <y1, y0>
     long t0 = q1 * y0;
-    long t1 = Math.multiplyHigh(q1, y0);
-    if (q1 < 0) t1 += y0;
-    if (y0 < 0) t1 += q1;
+    long t1 = Math.unsignedMultiplyHigh(q1, y0);
 
-    // wrapping sub <r1, x0> − <t1, t0> − <y1, y0>
-    overflow = Long.compareUnsigned(x0, t0) < 0 ? 1 : 0;
-    x[xLen - 3] -= t0;
+    res = x0 - t0;
+    overflow = ((~x0 & t0) | ((~x0 | t0) & res)) >>> 63;
+    x[xLen - 3] = res;
     x[xLen - 2] -= (t1 + overflow);
 
-    overflow = Long.compareUnsigned(x[xLen - 3], y0) < 0 ? 1 : 0;
-    x[xLen - 3] -= y0;
+    res = x[xLen - 3] - y0;
+    overflow = ((~x[xLen - 3] & y0) | ((~x[xLen - 3] | y0) & res)) >>> 63;
+    x[xLen - 3] = res;
     x[xLen - 2] -= (y1 + overflow);
 
+    // Adjustments
     q1 += 1;
     if (Long.compareUnsigned(x[xLen - 2], q0) >= 0) {
       q1 -= 1;
-      x[xLen - 3] += y0;
-      overflow = (Long.compareUnsigned(x[xLen - 3], y0) < 0) ? 1 : 0;
+      res = x[xLen - 3] + y0;
+      overflow = ((x[xLen - 3] & y0) | ((x[xLen - 3] | y0) & ~res)) >>> 63;
+      x[xLen - 3] = res;
       x[xLen - 2] += y1 + overflow;
     }
 
     int cmp = Long.compareUnsigned(x[xLen - 2], y1);
     if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(x[xLen - 3], y0) >= 0))) {
       q1 += 1;
-      overflow = Long.compareUnsigned(x[xLen - 3], y0) < 0 ? 1 : 0;
-      x[xLen - 3] -= y0;
+      res = x[xLen - 3] - y0;
+      overflow = ((~x[xLen - 3] & y0) | ((~x[xLen - 3] | y0) & res)) >>> 63;
+      x[xLen - 3] = res;
       x[xLen - 2] -= (y1 + overflow);
     }
+    x[xLen - 1] = 0;
     return q1;
   }
 
@@ -756,46 +748,48 @@ public final class UInt256 {
 
   private static void modNbyM(
       final long[] x, final int xLen, final long[] y, final int yLen, final long yInv) {
+    long res;
+    long borrow = 0;
     long yn1 = y[yLen - 1];
     long yn0 = y[yLen - 2];
-    int m = xLen - yLen;
-    for (int j = m - 1; j >= 0; j--) {
-      long tmp;
-      long borrow = 0;
-
+    int m = xLen - yLen - 1;
+    for (int j = m; j >= 0; j--) {
       // Unlikely overflow 3x2 case: x[..2] == y
       if (((yn1 ^ x[j + yLen]) | (yn0 ^ x[j + yLen - 1])) == 0) {
         // q = <0, 1> in this case, so multiply is trivial.
         // Still need to substract (and add back if needed).
         for (int i = 0; i < yLen; i++) {
-          tmp = (Long.compareUnsigned(x[i + j], borrow) < 0) ? 1 : 0;
-          x[j + i + 1] -= borrow;
-          borrow = tmp;
-          if (Long.compareUnsigned(x[j + i + 1], y[i]) < 0) borrow++;
-          x[j + i + 1] -= y[i];
+          res = x[j + i + 1] - y[i] - borrow;
+          borrow = ((~x[j + i + 1] & y[i]) | ((~x[j + i + 1] | y[i]) & res)) >>> 63;
+          x[j + i + 1] = res;
         }
-        tmp = (Long.compareUnsigned(x[j + yLen], borrow) < 0) ? 1 : 0;
-        x[j + yLen] -= borrow;
-        borrow = tmp;
+        x[j + yLen + 1] -= borrow;
+        borrow = (x[j + yLen + 1] >>> 63) & 1L;
       } else {
         long q = div3by2(x, j + yLen + 1, yn0, yn1, yInv);
+        long res0;
+	long prodHigh = 0;
 
         // Multiply-subtract: already have highest 2 limbs
         for (int i = 0; i < yLen - 2; i++) {
           long p0 = y[i] * q;
           long p1 = Math.unsignedMultiplyHigh(y[i], q);
-          tmp = (Long.compareUnsigned(x[j + i], borrow) < 0) ? p1 + 1 : p1;
-          x[j + i] -= borrow;
-          borrow = tmp;
-          if (Long.compareUnsigned(x[j + i], p0) < 0) borrow++;
-          x[j + i] -= p0;
+	  res0 = x[j + i] - p0 - borrow;
+	  p1 += ((~x[j + i] & p0) | ((~x[j + i] | p0) & res0)) >>> 63;  // p1 < b - 1 so can add 0 or 1
+	  res = res0 - prodHigh;
+          borrow = ((~res0 & prodHigh) | ((~res0 | prodHigh) & res)) >>> 63;
+          x[j + i] = res;
+	  prodHigh = p1;
         }
-        tmp = (Long.compareUnsigned(x[j + yLen - 2], borrow) < 0) ? 1 : 0;
-        x[j + yLen - 2] -= borrow;
-        borrow = tmp;
-        tmp = (Long.compareUnsigned(x[j + yLen - 1], borrow) < 0) ? 1 : 0;
-        x[j + yLen - 1] -= borrow;
-        borrow = tmp;
+	// Propagate overflows (borrows)
+	res = x[j + yLen - 2] - prodHigh - borrow;
+	borrow = ((~x[j + yLen - 2] & prodHigh) | ((~x[j + yLen - 2] | prodHigh) & res)) >>> 63;
+        x[j + yLen - 2] = res;
+	res = x[j + yLen - 1] - borrow;
+        borrow = (((borrow ^ 1L) | x[j + yLen - 1]) == 0) ? 1 : 0;
+	x[j + yLen - 1] = res;
+        x[j + yLen] -= borrow;
+        borrow = (x[j + yLen] >>> 63) & 1;
       }
 
       if (borrow != 0) { // unlikely
@@ -803,16 +797,16 @@ public final class UInt256 {
         long carry = 0;
         int i;
         for (i = 0; i < yLen; i++) {
-          x[j + i] = x[j + i] + carry;
-          carry = (Long.compareUnsigned(x[j + i], carry) < 0) ? 1 : 0;
-          x[j + i] = x[j + i] + y[i];
-          if (Long.compareUnsigned(x[j + i], y[i]) < 0) carry++;
+          res = x[j + i] + y[i] + carry;
+          carry = ((x[j + i] & y[i]) | ((x[j + i] | y[i]) & ~res)) >>> 63;
+	  x[j + i] = res;
         }
-        while ((carry != 0) && (i < xLen)) {
-          x[j + i] = x[j + i] + carry;
-          carry = (Long.compareUnsigned(x[j + i], carry) < 0) ? 1 : 0;
-        }
+	for (; (carry != 0) && (i < xLen - j); i++) {
+          x[j + i] += carry;
+	  carry = (x[j + i] == 0L) ? 1L : 0L;
+	}
       }
+      borrow = 0;
     }
   }
 
