@@ -17,6 +17,7 @@ package org.hyperledger.besu.evm;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 
 import com.google.common.annotations.VisibleForTesting;
 
@@ -205,6 +206,15 @@ public final class UInt256 {
   public boolean isZero() {
     return (limbs[0] | limbs[1] | limbs[2] | limbs[3] | limbs[4] | limbs[5] | limbs[6] | limbs[7])
         == 0;
+  }
+
+  /**
+   * Is the value 0 ?
+   *
+   * @return true if this UInt256 value is 0.
+   */
+  public boolean isZeroArray() {
+    return Arrays.equals(limbs, ZERO.limbs);
   }
 
   /**
