@@ -210,6 +210,15 @@ public final class UInt256 {
   }
 
   /**
+   * Is the value 0 ?
+   *
+   * @return true if this UInt256 value is 0.
+   */
+  public boolean isZeroArray() {
+    return Arrays.equals(limbs, ZERO.limbs);
+  }
+
+  /**
    * Compares two UInt256.
    *
    * @param a left UInt256
