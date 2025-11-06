@@ -208,6 +208,58 @@ public final class UInt256 {
   }
 
   /**
+   * Is the value 1 ?
+   *
+   * @return true if this UInt256 value is 1.
+   */
+  public boolean isOne() {
+    return ((limbs[0] ^ 1)
+            | limbs[1]
+            | limbs[2]
+            | limbs[3]
+            | limbs[4]
+            | limbs[5]
+            | limbs[6]
+            | limbs[7])
+        == 0;
+  }
+
+  /**
+   * Is the value -1 ?
+   *
+   * @return true if this UInt256 value is 1.
+   */
+  public boolean isNegOne() {
+    return ((limbs[0] ^ -1)
+            | (limbs[1] ^ -1)
+            | (limbs[2] ^ -1)
+            | (limbs[3] ^ -1)
+            | (limbs[4] ^ -1)
+            | (limbs[5] ^ -1)
+            | (limbs[6] ^ -1)
+            | (limbs[7] ^ -1))
+        == 0;
+  }
+
+  /**
+   * Is the value 0 or 1 ?
+   *
+   * @return true if this UInt256 value is 0 or 1.
+   */
+  public boolean isZeroOrOne() {
+    return (limbs[0]
+            | (limbs[0] ^ 1)
+            | limbs[1]
+            | limbs[2]
+            | limbs[3]
+            | limbs[4]
+            | limbs[5]
+            | limbs[6]
+            | limbs[7])
+        == 0;
+  }
+
+  /**
    * Compares two UInt256.
    *
    * @param a left UInt256
@@ -216,7 +268,8 @@ public final class UInt256 {
    */
   public static int compare(final UInt256 a, final UInt256 b) {
     int comp;
-    for (int i = N_LIMBS - 1; i >= 0; i--) {
+    int i = Math.max(a.length, b.length);
+    while (--i >= 0) {
       comp = Integer.compareUnsigned(a.limbs[i], b.limbs[i]);
       if (comp != 0) return comp;
     }
@@ -263,7 +316,7 @@ public final class UInt256 {
    * @return The remainder modulo {@code modulus}.
    */
   public UInt256 mod(final UInt256 modulus) {
-    if (this.isZero() || modulus.isZero()) return ZERO;
+    if (this.isZero() || modulus.isZeroOrOne()) return ZERO;
     return new UInt256(knuthRemainder(this.limbs, modulus.limbs), modulus.length);
   }
 
@@ -277,7 +330,7 @@ public final class UInt256 {
    * @return The remainder modulo {@code modulus}.
    */
   public UInt256 signedMod(final UInt256 modulus) {
-    if (this.isZero() || modulus.isZero()) return ZERO;
+    if (this.isZero() || modulus.isZeroOrOne() || modulus.isNegOne()) return ZERO;
     int[] x = new int[N_LIMBS];
     int[] y = new int[N_LIMBS];
     absInto(x, this.limbs, N_LIMBS);
@@ -298,7 +351,9 @@ public final class UInt256 {
    * @return This integer this + other (mod modulus).
    */
   public UInt256 addMod(final UInt256 other, final UInt256 modulus) {
-    if (modulus.isZero()) return ZERO;
+    if (modulus.isZeroOrOne()) return ZERO;
+    if (this.isZero()) return other.mod(modulus);
+    if (other.isZero()) return this.mod(modulus);
     int[] sum = addWithCarry(this.limbs, this.length, other.limbs, other.length);
     int[] rem = knuthRemainder(sum, modulus.limbs);
     return new UInt256(rem, modulus.length);
@@ -312,7 +367,9 @@ public final class UInt256 {
    * @return This integer this + other (mod modulus).
    */
   public UInt256 mulMod(final UInt256 other, final UInt256 modulus) {
-    if (this.isZero() || other.isZero() || modulus.isZero()) return ZERO;
+    if (this.isZero() || other.isZero() || modulus.isZeroOrOne()) return ZERO;
+    if (this.isOne()) return other.mod(modulus);
+    if (other.isOne()) return this.mod(modulus);
     int[] result = addMul(this.limbs, this.length, other.limbs, other.length);
     result = knuthRemainder(result, modulus.limbs);
     return new UInt256(result, modulus.length);
@@ -330,18 +387,17 @@ public final class UInt256 {
   }
 
   private static int compareLimbs(final int[] a, final int aLen, final int[] b, final int bLen) {
-    int cmp;
-    if (aLen > bLen) {
-      for (int i = aLen - 1; i >= bLen; i--) {
-        cmp = Integer.compareUnsigned(a[i], 0);
-        if (cmp != 0) return cmp;
-      }
-    } else if (aLen < bLen) {
-      for (int i = bLen - 1; i >= aLen; i--) {
-        cmp = Integer.compareUnsigned(0, b[i]);
-        if (cmp != 0) return cmp;
-      }
+    int cmp = 0;
+    // Case aLen > bLen
+    for (int i = aLen - 1; i >= bLen; i--) {
+      cmp |= a[i] ^ 0;
     }
+    if (cmp != 0) return 1;
+    // Case aLen < bLen
+    for (int i = bLen - 1; i >= aLen; i--) {
+      cmp |= b[i] ^ 0;
+    }
+    if (cmp != 0) return -1;
     for (int i = Math.min(aLen, bLen) - 1; i >= 0; i--) {
       cmp = Integer.compareUnsigned(a[i], b[i]);
       if (cmp != 0) return cmp;
@@ -371,6 +427,7 @@ public final class UInt256 {
   }
 
   private static int numberOfLeadingZeros(final int[] x, final int xLen) {
+    if (xLen == 0) return 0;
     int leadingIndex = xLen - 1;
     while ((leadingIndex >= 0) && (x[leadingIndex] == 0)) leadingIndex--;
     return 32 * (xLen - leadingIndex - 1) + Integer.numberOfLeadingZeros(x[leadingIndex]);
