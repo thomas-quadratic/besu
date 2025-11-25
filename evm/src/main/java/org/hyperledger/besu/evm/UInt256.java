@@ -17,8 +17,14 @@ package org.hyperledger.besu.evm;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 
 import com.google.common.annotations.VisibleForTesting;
+import jdk.incubator.vector.IntVector;
+import jdk.incubator.vector.LongVector;
+import jdk.incubator.vector.VectorMask;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 /**
  * 256-bits wide unsigned integer class.
@@ -48,6 +54,14 @@ public final class UInt256 {
   // Mask for long values
   private static final long MASK_L = 0xFFFFFFFFL;
 
+  // SIMD Vector Species
+  private static VectorSpecies<Integer> SPECIES = IntVector.SPECIES_256;
+  private static VectorSpecies<Long> SPECIES_L = LongVector.SPECIES_256;
+
+  // Vectors utils
+  private static LongVector ALLSET_VEC = LongVector.broadcast(SPECIES_L, -1L); // 0xFFFFFFFFFFFFFFFF
+
+  // Internal state
   private final int[] limbs;
   private final int length;
 
@@ -191,6 +205,15 @@ public final class UInt256 {
     return sb.toString();
   }
 
+  private long[] toLongLimbs() {
+    int n_longs = (N_LIMBS + 1) / 2;
+    long[] result = new long[n_longs];
+    for (int i = 0; i < n_longs; i++) {
+      result[i] = (limbs[i * 2] & MASK_L) | ((limbs[i * 2 + 1] & MASK_L) << 32);
+    }
+    return result;
+  }
+
   // --------------------------------------------------------------------------
   // endregion
 
@@ -205,6 +228,29 @@ public final class UInt256 {
   public boolean isZero() {
     return (limbs[0] | limbs[1] | limbs[2] | limbs[3] | limbs[4] | limbs[5] | limbs[6] | limbs[7])
         == 0;
+  }
+
+  /**
+   * Is the value 0 ? (SIMD-accelerated)
+   *
+   * @return true if this UInt256 value is 0.
+   */
+  public boolean isZeroVec() {
+    IntVector v = IntVector.fromArray(SPECIES, limbs, 0);
+    return v.reduceLanes(VectorOperators.OR) == 0;
+  }
+
+  /**
+   * Is the value 0 using intrinsic vectorized comparison.
+   *
+   * <p>This method uses Arrays.mismatch to efficiently check if
+   * all limbs are zero by comparing against a static zero array.
+   *
+   * @return true if this UInt256 value is 0.
+   */
+  public boolean isZeroIntrinsic() {
+    int mismatch = Arrays.mismatch(limbs, ZERO.limbs);
+    return mismatch == -1;
   }
 
   /**
@@ -239,6 +285,18 @@ public final class UInt256 {
             | (this.limbs[6] ^ other.limbs[6])
             | (this.limbs[7] ^ other.limbs[7]);
     return xor == 0;
+  }
+
+  public boolean equalsVec(final Object obj) {
+    if (this == obj) return true;
+    if (!(obj instanceof UInt256)) return false;
+    UInt256 other = (UInt256) obj;
+
+    // SIMD-accelerated: XOR all limbs vectorized, then reduce with OR
+    IntVector thisVec = IntVector.fromArray(SPECIES, this.limbs, 0);
+    IntVector otherVec = IntVector.fromArray(SPECIES, other.limbs, 0);
+    IntVector xorVec = thisVec.lanewise(VectorOperators.XOR, otherVec);
+    return xorVec.reduceLanes(VectorOperators.OR) == 0;
   }
 
   @Override
@@ -358,6 +416,27 @@ public final class UInt256 {
     for (int i = 0; i < xLen; i++) {
       x[i] = ~x[i] + carry;
       carry = (x[i] == 0 && carry == 1) ? 1 : 0;
+    }
+  }
+
+  private static void negateVec(final int[] x, final int xLen) {
+    if (xLen == N_LIMBS) {
+      // SIMD-accelerated path for full-width negation
+      // Step 1: Bitwise NOT using SIMD
+      IntVector v = IntVector.fromArray(SPECIES, x, 0);
+      IntVector notV = v.not();
+
+      // Step 2: Add 1 with carry propagation (must be done sequentially)
+      notV.intoArray(x, 0);
+      int carry = 1;
+      for (int i = 0; i < xLen; i++) {
+        long temp = (x[i] & MASK_L) + carry;
+        x[i] = (int) temp;
+        carry = (int) (temp >>> 32);
+        if (carry == 0) break;
+      }
+    } else {
+      negate(x, xLen);
     }
   }
 
@@ -493,6 +572,234 @@ public final class UInt256 {
       }
     }
     return lhs;
+  }
+
+  // ============================================================================
+  // SIMD Addition Support
+  // ============================================================================
+  //
+  // This section implements SIMD-accelerated 256-bit unsigned integer addition
+  // using the JDK Vector API (jdk.incubator.vector). The implementation treats
+  // 8 x 32-bit limbs as 4 x 64-bit lanes for hardware-accelerated parallel
+  // addition.
+  //
+  // Hardware Requirements:
+  // - x86-64 with AVX2 (256-bit SIMD) - widely available since 2013
+  // - ARM with NEON/SVE (alternative vector instruction sets)
+  //
+  // Performance Benefits:
+  // - 4 additions execute in parallel (SIMD lanes)
+  // - Reduced pipeline stalls from data dependencies
+  // - Efficient carry propagation via lookup table
+  // - JIT compiler generates native SIMD instructions (e.g., vpaddd, vpaddq)
+  //
+  // Algorithm Overview:
+  // 1. Load operands into 256-bit vectors (4 x 64-bit lanes)
+  // 2. Parallel addition across all lanes simultaneously
+  // 3. Detect per-lane carries using unsigned comparison (result < operand)
+  // 4. Detect cascade conditions (lanes with all 1s propagate carries)
+  // 5. Calculate cross-lane carry propagation (scalar operations)
+  // 6. Apply cascaded carries via lookup table
+  // 7. Return result with overflow flag
+  //
+  // Based on the reference implementation from .NET Runtime:
+  // https://github.com/dotnet/runtime/blob/main/src/libraries/System.Runtime.Numerics/src/System/UInt256.cs
+  // ============================================================================
+
+  // Lookup table for SIMD carry propagation
+  // Each entry represents carry values for 4 lanes based on cascade pattern (16 entries x 32 bytes)
+  private static final byte[] BROADCAST_LOOKUP = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+
+  /**
+   * SIMD-accelerated addition of two UInt256 values using JDK Vector API.
+   *
+   * <p>This implementation uses the JDK Vector API with 256-bit vectors (4 x 64-bit lanes) to
+   * perform hardware-accelerated parallel addition with carry propagation across lanes.
+   *
+   * <p>Requires: --add-modules jdk.incubator.vector
+   *
+   * @param a First UInt256 operand
+   * @param b Second UInt256 operand
+   * @return Result UInt256 containing a + b, and whether overflow occurred
+   */
+  public static int[] addSIMD(final UInt256 a, final UInt256 b) {
+    // Convert to 256-bit vectors with 4 x 64-bit lanes
+    long[] aLongs = a.toLongLimbs();
+    long[] bLongs = b.toLongLimbs();
+    LongVector aVec = LongVector.fromArray(SPECIES_L, aLongs, 0);
+    LongVector bVec = LongVector.fromArray(SPECIES_L, bLongs, 0);
+
+    // Lanewise add, carry and cascade
+    LongVector resultVec = aVec.add(bVec);
+    VectorMask<Long> carryMask = resultVec.compare(VectorOperators.UNSIGNED_LT, aVec);
+    VectorMask<Long> cascadeMask = resultVec.compare(VectorOperators.EQ, ALLSET_VEC);
+
+    // Calculate cross-lane carries using scalar operations
+    int carry = maskToInt(carryMask);
+    int cascade = maskToInt(cascadeMask);
+    carry = cascade + 2 * carry;
+    cascade ^= carry;
+    cascade &= 0x0f;
+
+    int lookupOffset = cascade * 32;
+    long[] cascadedCarries = new long[4];
+    for (int i = 0; i < 4; i++) {
+      long value = 0;
+      for (int j = 0; j < 8; j++) {
+        value |= ((long) (BROADCAST_LOOKUP[lookupOffset + i * 8 + j] & 0xFF)) << (j * 8);
+      }
+      cascadedCarries[i] = value;
+    }
+
+    // Apply cascaded carries
+    LongVector carryVector = LongVector.fromArray(SPECIES_L, cascadedCarries, 0);
+    resultVec = resultVec.add(carryVector);
+    long[] resultLongs = new long[4];
+    resultVec.intoArray(resultLongs, 0);
+
+    int[] result = new int[N_LIMBS + 1];
+    for (int i = 0; i < 4; i++) {
+      result[i * 2] = (int) resultLongs[i];
+      result[i * 2 + 1] = (int) (resultLongs[i] >>> 32);
+    }
+    boolean overflow = (carry & 0b1_0000) != 0;
+    result[N_LIMBS] = overflow ? 1 : 0;
+    return result;
+  }
+
+  /**
+   * Convert a VectorMask to an integer bitmask.
+   *
+   * <p>Each bit represents whether the corresponding lane's mask is true.
+   *
+   * @param mask The vector mask to convert
+   * @return Integer bitmask where bit i is set if lane i's mask is true
+   */
+  private static int maskToInt(final VectorMask<Long> mask) {
+    int result = 0;
+    for (int i = 0; i < 4; i++) {
+      if (mask.laneIsSet(i)) {
+        result |= (1 << i);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * SIMD-accelerated addition using IntVector (8 x 32-bit lanes).
+   *
+   * <p>This implementation uses IntVector for a more direct approach, performing parallel addition
+   * across all 8 limbs, then handling carry propagation sequentially.
+   *
+   * <p>Simpler than the LongVector approach but requires sequential carry propagation.
+   *
+   * @param a First UInt256 operand
+   * @param b Second UInt256 operand
+   * @return Result UInt256 containing a + b, and whether overflow occurred
+   */
+  public static int[] addSIMDInt(final UInt256 a, final UInt256 b) {
+    IntVector aVec = IntVector.fromArray(SPECIES, a.limbs, 0);
+    IntVector bVec = IntVector.fromArray(SPECIES, b.limbs, 0);
+    IntVector sumVec = aVec.add(bVec);
+    VectorMask<Integer> carryMask = sumVec.compare(VectorOperators.UNSIGNED_LT, aVec);
+
+    int[] result = new int[N_LIMBS + 1];
+    sumVec.intoArray(result, 0);
+    long carry = 0;
+    for (int i = 0; i < N_LIMBS; i++) {
+      if (carryMask.laneIsSet(i)) {
+        carry = 1;
+      }
+
+      if (i < N_LIMBS - 1 && carry != 0) {
+        long next = (result[i + 1] & MASK_L) + carry;
+        result[i + 1] = (int) next;
+        carry = next >>> 32;
+      }
+    }
+    boolean overflow = carry != 0;
+    result[N_LIMBS] = overflow ? 1 : 0;
+    return result;
   }
 
   private static int[] knuthRemainder(final int[] dividend, final int[] modulus) {
