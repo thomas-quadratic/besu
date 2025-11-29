@@ -227,7 +227,7 @@ public class UInt256Prop {
 
     byte[] ba = y.toByteArray();
     if (ba.length == 0) {
-      return new byte[] {0};
+      return new byte[32];
     }
 
     if (ba.length == 32) {
