@@ -16,15 +16,18 @@ package org.hyperledger.besu.ethereum.vm.operations;
 
 import org.hyperledger.besu.evm.frame.MessageFrame;
 import org.hyperledger.besu.evm.operation.ModOperationOptimized;
+import org.hyperledger.besu.evm.operation.ModOperationOptimizedCandidate;
 import org.hyperledger.besu.evm.operation.Operation;
 
 import java.math.BigInteger;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.apache.tuweni.bytes.Bytes;
+import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Param;
 import org.openjdk.jmh.annotations.Setup;
+import org.openjdk.jmh.infra.Blackhole;
 
 public class ModOperationBenchmark extends BinaryOperationBenchmark {
   // Benches for a % b
@@ -129,5 +132,21 @@ public class ModOperationBenchmark extends BinaryOperationBenchmark {
   @Override
   protected Operation.OperationResult invoke(final MessageFrame frame) {
     return ModOperationOptimized.staticOperation(frame);
+  }
+
+  protected Operation.OperationResult invokeCandidate(final MessageFrame frame) {
+    return ModOperationOptimizedCandidate.staticOperation(frame);
+  }
+
+  @Benchmark
+  public void executeOperationCandidate(final Blackhole blackhole) {
+    frame.pushStackItem(bPool[index]);
+    frame.pushStackItem(aPool[index]);
+
+    blackhole.consume(invokeCandidate(frame));
+
+    frame.popStackItem();
+
+    index = (index + 1) % SAMPLE_SIZE;
   }
 }

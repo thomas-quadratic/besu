@@ -90,6 +90,49 @@ public final class UInt256 {
    * @param bytes raw bytes in BigEndian order.
    * @return Big-endian UInt256 represented by the bytes.
    */
+  public static UInt256 fromBytesBECandidate(final byte[] bytes) {
+    int byteLen = bytes.length;
+    if (byteLen == 0) return ZERO;
+
+    int[] limbs = new int[N_LIMBS];
+
+    // Fast path for exactly 32 bytes
+    if (byteLen == 32) {
+      limbs[7] = getIntBE(bytes, 0);
+      limbs[6] = getIntBE(bytes, 4);
+      limbs[5] = getIntBE(bytes, 8);
+      limbs[4] = getIntBE(bytes, 12);
+      limbs[3] = getIntBE(bytes, 16);
+      limbs[2] = getIntBE(bytes, 20);
+      limbs[1] = getIntBE(bytes, 24);
+      limbs[0] = getIntBE(bytes, 28);
+      return new UInt256(limbs, N_LIMBS);
+    }
+
+    // General path for variable length
+    int limbIndex = 0;
+    int byteIndex = byteLen - 1;
+
+    while (byteIndex >= 0 && limbIndex < N_LIMBS) {
+      int limb = 0;
+      int shift = 0;
+
+      for (int j = 0; j < 4 && byteIndex >= 0; j++, byteIndex--, shift += 8) {
+        limb |= (bytes[byteIndex] & 0xFF) << shift;
+      }
+
+      limbs[limbIndex++] = limb;
+    }
+
+    return new UInt256(limbs, limbIndex);
+  }
+
+  /**
+   * Instantiates a new UInt256 from byte array.
+   *
+   * @param bytes raw bytes in BigEndian order.
+   * @return Big-endian UInt256 represented by the bytes.
+   */
   public static UInt256 fromBytesBE(final byte[] bytes) {
     int msb = Arrays.mismatch(bytes, ZERO_BYTES);  // Most significant byte index
     if (msb == -1) return ZERO;
