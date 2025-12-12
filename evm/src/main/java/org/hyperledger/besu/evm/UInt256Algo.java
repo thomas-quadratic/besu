@@ -107,7 +107,7 @@ public final class UInt256Algo {
     byte[] sum = new byte[len];
     byte carry = addImplC(sum, a, b);
     byte[] result = sum;
-    if (carry == 0) {
+    if (carry != 0) {
       result = new byte[sum.length + 1];
       result[0] = carry;
       System.arraycopy(sum, 0, result, 1, sum.length);
@@ -143,7 +143,7 @@ public final class UInt256Algo {
     if (isOne(b)) return a;
     int[] aLimbs = bytesToInts(a, nLeadingZeroes(a));
     int[] bLimbs = bytesToInts(b, nLeadingZeroes(b));
-    int[] prod = addMul(aLimbs, 0, bLimbs, 0);
+    int[] prod = wrappingMul(aLimbs, 0, bLimbs, 0);
     return intsToBytes(prod, nLeadingZeroes(prod));
   }
 
@@ -321,6 +321,13 @@ public final class UInt256Algo {
   // region : Helpers
   // --------------------------------------------------------------------------
 
+  // private static byte[] trimLeadingZeroes(byte[] a) {
+  //   int offset = nLeadingZeroes(a);
+  //   byte[] result = new byte[a.length - offset];
+  //   System.arraycopy(a, offset, result, 0, a.length - offset);
+  //   return result;
+  // }
+
   private static int nLeadingZeroes(final byte[] a) {
     return Arrays.mismatch(a, ZERO_BYTES); // Most significant byte index
   }
@@ -345,8 +352,8 @@ public final class UInt256Algo {
    */
   private static int[] bytesToInts(final byte[] bytes) {
     // Unchecked : bytes.length <= BYTESIZE
-    if (bytes.length == 0) return new int[0];
     int[] limbs = new int[N_LIMBS];
+    if (bytes.length == 0) return limbs;
     int i = N_LIMBS - 1; // Index in int array
     int b = bytes.length - 1; // Index in bytes array
     int limb;
@@ -447,6 +454,22 @@ public final class UInt256Algo {
   private static boolean isOne(final byte[] bytes) {
     int msb = Arrays.mismatch(bytes, 0, bytes.length, ONE_BYTES, BYTESIZE - bytes.length, BYTESIZE);
     return (msb == -1 || msb >= bytes.length);
+  }
+
+  /**
+   * Compares two bytes array seen as big-endian unsigned integers.
+   *
+   * @param a left unsigned integer
+   * @param b right unsigned integer
+   * @return 0 if a == b, negative if a &lt; b and positive if a &gt; b.
+   */
+  public static int compare(final byte[] a, final byte[] b) {
+    int ai = nLeadingZeroes(a);
+    int bi = nLeadingZeroes(b);
+    int cmp = Integer.compare(a.length - ai, b.length - bi);
+    if (cmp != 0) return cmp;
+    int i = Arrays.mismatch(a, ai, a.length, b, bi, b.length);
+    return (i == -1 || i >= a.length - ai) ? 0 : Integer.compareUnsigned(a[i], b[i]);
   }
 
   // /**
@@ -608,7 +631,7 @@ public final class UInt256Algo {
     int carry = 0;
     for (; j >= 0; i--, j--) {
       int xi = x[i] & 0xFF;
-      int yi = y[i] & 0xFF;
+      int yi = y[j] & 0xFF;
       int sum = xi + yi + carry;
       result[i] = (byte) sum;
       carry = sum >>> 8;
@@ -626,7 +649,7 @@ public final class UInt256Algo {
   }
 
   private static byte addImplD(final byte[] result, final byte[] a, final byte[] b) {
-    int i = N_LIMBS - 1;
+    int i = BYTESIZE - 1;
     int carry = 0;
     for (; i >= 0; i--) {
       int ai = a[i] & 0xFF;
@@ -680,6 +703,53 @@ public final class UInt256Algo {
       }
     }
     return lhs;
+  }
+
+  private static int[] wrappingMul(final int[] a, final int aOffset, final int[] b, final int bOffset) {
+    // Shortest in outer loop, swap if needed
+    int[] x;
+    int[] y;
+    int xOffset;
+    int yOffset;
+    if (a.length - aOffset < b.length - bOffset) {
+      x = b;
+      xOffset = bOffset;
+      y = a;
+      yOffset = aOffset;
+    } else {
+      x = a;
+      xOffset = aOffset;
+      y = b;
+      yOffset = bOffset;
+    }
+
+    int xLen = x.length - xOffset;
+    int yLen = y.length - yOffset;
+    int maxLen = xLen + yLen + 1;
+    int resLen = Math.min(N_LIMBS, maxLen);
+    int[] result = new int[resLen];
+
+    for (int i = y.length - 1, m = resLen - 1; i >= yOffset && m >= 0; i--, m--) {
+      long yi = y[i] & MASK_L;
+      long carry = 0;
+      int k = m;
+      for (int j = x.length - 1; j >= xOffset && k >= 0; j--, k--) {
+        long prod = yi * (x[j] & MASK_L);
+        long sum = (result[k] & MASK_L) + prod + carry;
+        result[k] = (int) sum;
+        carry = sum >>> N_BITS_PER_LIMB;
+      }
+
+      // Propagate leftover carry, but only within N_LIMBS bounds
+      while (carry != 0 && k >= 0) {
+        long sum = (result[k] & MASK_L) + carry;
+        result[k] = (int) sum;
+        carry = sum >>> N_BITS_PER_LIMB;
+        k--;
+      }
+      // Any carry beyond position 0 is discarded (wrapping behavior)
+    }
+    return result;
   }
 
   private static int[] knuthRemainder(final int[] dividend, final int[] modulus) {
