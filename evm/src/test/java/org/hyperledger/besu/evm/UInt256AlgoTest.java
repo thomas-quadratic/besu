@@ -61,15 +61,15 @@ public class UInt256AlgoTest {
   }
 
   // region Addition Tests
-  // Note: addA, addB convert variable-length input to 8 int limbs internally, but accept any length
-  // addC works directly with variable-length byte arrays
-  // addD expects exactly 32-byte inputs
+  // Note: addIntWidening, addIntAndCarry convert variable-length input to 8 int limbs internally, but accept any length
+  // addByteVarLen works directly with variable-length byte arrays
+  // addByteFixedLen expects exactly 32-byte inputs
 
   @Test
   public void testAddA_simple() {
     byte[] a = new byte[] {5};
     byte[] b = new byte[] {10};
-    byte[] result = UInt256Algo.addA(a, b);
+    byte[] result = UInt256Algo.addIntWidening(a, b);
     byte[] expected = new byte[] {15};
     assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
   }
@@ -78,7 +78,7 @@ public class UInt256AlgoTest {
   public void testAddA_withCarry() {
     byte[] a = new byte[] {(byte) 0xFF};
     byte[] b = new byte[] {2};
-    byte[] result = UInt256Algo.addA(a, b);
+    byte[] result = UInt256Algo.addIntWidening(a, b);
     byte[] expected = new byte[] {1, 1}; // 255 + 2 = 257 = 0x0101
     assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
   }
@@ -87,7 +87,7 @@ public class UInt256AlgoTest {
   public void testAddA_zeroLeft() {
     byte[] a = new byte[0];
     byte[] b = new byte[] {42};
-    byte[] result = UInt256Algo.addA(a, b);
+    byte[] result = UInt256Algo.addIntWidening(a, b);
     assertArrayEquals(b, result);
   }
 
@@ -95,7 +95,7 @@ public class UInt256AlgoTest {
   public void testAddA_zeroRight() {
     byte[] a = new byte[] {42};
     byte[] b = new byte[0];
-    byte[] result = UInt256Algo.addA(a, b);
+    byte[] result = UInt256Algo.addIntWidening(a, b);
     assertArrayEquals(a, result);
   }
 
@@ -104,7 +104,7 @@ public class UInt256AlgoTest {
     byte[] maxValue = new byte[32];
     Arrays.fill(maxValue, (byte) 0xFF);
     byte[] one = new byte[] {1};
-    byte[] result = UInt256Algo.addA(maxValue, one);
+    byte[] result = UInt256Algo.addIntWidening(maxValue, one);
     // Should wrap to zero (modulo 2^256)
     byte[] expected = new byte[0];
     assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
@@ -114,7 +114,7 @@ public class UInt256AlgoTest {
   public void testAddB_simple() {
     byte[] a = new byte[] {7};
     byte[] b = new byte[] {3};
-    byte[] result = UInt256Algo.addB(a, b);
+    byte[] result = UInt256Algo.addIntAndCarry(a, b);
     byte[] expected = new byte[] {10};
     assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
   }
@@ -123,7 +123,7 @@ public class UInt256AlgoTest {
   public void testAddC_simple() {
     byte[] a = new byte[] {20};
     byte[] b = new byte[] {30};
-    byte[] result = UInt256Algo.addC(a, b);
+    byte[] result = UInt256Algo.addByteVarLen(a, b);
     byte[] expected = new byte[] {50};
     assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
   }
@@ -132,41 +132,41 @@ public class UInt256AlgoTest {
   public void testAddC_withCarry() {
     byte[] a = new byte[] {(byte) 0xFF, (byte) 0xFF};
     byte[] b = new byte[] {1};
-    byte[] result = UInt256Algo.addC(a, b);
+    byte[] result = UInt256Algo.addByteVarLen(a, b);
     byte[] expected = new byte[] {1, 0, 0}; // 0xFFFF + 1 = 0x10000
     assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
   }
 
   @Test
   public void testAddD_simple() {
-    // addD returns exactly 32 bytes always
+    // addByteFixedLen returns exactly 32 bytes always
     byte[] a = bigIntToBytes32(BigInteger.valueOf(100));
     byte[] b = bigIntToBytes32(BigInteger.valueOf(50));
-    byte[] result = UInt256Algo.addD(a, b);
+    byte[] result = UInt256Algo.addByteFixedLen(a, b);
     byte[] expected = bigIntToBytes32(BigInteger.valueOf(150));
     assertArrayEquals(expected, result);
   }
 
   @Test
   public void testAddD_overflow() {
-    // addD returns exactly 32 bytes, wrapping on overflow
+    // addByteFixedLen returns exactly 32 bytes, wrapping on overflow
     byte[] maxValue = new byte[32];
     Arrays.fill(maxValue, (byte) 0xFF);
     byte[] one = bigIntToBytes32(BigInteger.ONE);
-    byte[] result = UInt256Algo.addD(maxValue, one);
+    byte[] result = UInt256Algo.addByteFixedLen(maxValue, one);
     byte[] expected = new byte[32]; // All zeros
     assertArrayEquals(expected, result);
   }
 
   @Test
   public void testAdd_implementations_consistency() {
-    // Test that addA, addB, addC produce equivalent results
+    // Test that addIntWidening, addIntAndCarry, addByteVarLen produce equivalent results
     byte[] a = new byte[] {(byte) 0x12, (byte) 0x34, (byte) 0x56};
     byte[] b = new byte[] {(byte) 0xAB, (byte) 0xCD};
 
-    byte[] resultA = UInt256Algo.addA(a, b);
-    byte[] resultB = UInt256Algo.addB(a, b);
-    byte[] resultC = UInt256Algo.addC(a, b);
+    byte[] resultA = UInt256Algo.addIntWidening(a, b);
+    byte[] resultB = UInt256Algo.addIntAndCarry(a, b);
+    byte[] resultC = UInt256Algo.addByteVarLen(a, b);
 
     assertThat(UInt256Algo.compare(resultA, resultB)).isEqualTo(0);
     assertThat(UInt256Algo.compare(resultA, resultC)).isEqualTo(0);
@@ -180,9 +180,9 @@ public class UInt256AlgoTest {
     byte[] a = bigIntToBytes(aBig);
     byte[] b = bigIntToBytes(bBig);
 
-    byte[] resultA = UInt256Algo.addA(a, b);
-    byte[] resultB = UInt256Algo.addB(a, b);
-    byte[] resultC = UInt256Algo.addC(a, b);
+    byte[] resultA = UInt256Algo.addIntWidening(a, b);
+    byte[] resultB = UInt256Algo.addIntAndCarry(a, b);
+    byte[] resultC = UInt256Algo.addByteVarLen(a, b);
 
     byte[] expected = bigIntToBytes(aBig.add(bBig).mod(BigInteger.ONE.shiftLeft(256)));
 
@@ -678,7 +678,7 @@ public class UInt256AlgoTest {
     byte[] zero = new byte[0];
 
     // 0 + 0 = 0
-    assertThat(UInt256Algo.compare(UInt256Algo.addA(zero, zero), zero)).isEqualTo(0);
+    assertThat(UInt256Algo.compare(UInt256Algo.addIntWidening(zero, zero), zero)).isEqualTo(0);
 
     // 0 * anything = 0
     byte[] anything = new byte[] {42};

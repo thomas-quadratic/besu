@@ -15,6 +15,11 @@
 package org.hyperledger.besu.evm;
 
 import java.util.Arrays;
+import jdk.incubator.vector.IntVector;
+import jdk.incubator.vector.LongVector;
+import jdk.incubator.vector.VectorMask;
+import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorSpecies;
 
 /**
  * 256-bits wide unsigned integer class.
@@ -30,18 +35,16 @@ public final class UInt256Algo {
   // Length is used to optimise algorithms, skipping leading zeroes.
   // Nonetheless, 256bits are always allocated and initialised to zeroes.
 
+  /** Fixed sizes */
+  public static final int BITSIZE = 256;
+  public static final int BYTESIZE = 32;
+  public static final int INTSIZE = 8;
+  public static final int LONGSIZE = 4;
+
   // Fixed number of limbs or digits
-  private static final int N_LIMBS = 8;
-  // Fixed number of bits per limb.
   private static final int N_BITS_PER_LIMB = 32;
   // Mask for long values
   private static final long MASK_L = 0xFFFFFFFFL;
-
-  /** Fixed size in bytes. */
-  public static final int BYTESIZE = 32;
-
-  /** Fixed size in bits. */
-  public static final int BITSIZE = 256;
 
   // Arrays of zeros.
   private static final byte[] ZERO_BYTES = new byte[BYTESIZE];
@@ -51,7 +54,13 @@ public final class UInt256Algo {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
       };
   // For int, we accomodate up to a result of a multiplication
-  private static final int[] ZERO_INTS = new int[N_LIMBS + N_LIMBS + 1];
+  private static final int[] ZERO_INTS = new int[INTSIZE + INTSIZE + 1];
+
+  // SIMD Vector Species
+  private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_256;
+  private static final VectorSpecies<Long> SPECIES_L = LongVector.SPECIES_256;
+  // Vectors utils
+  private static final LongVector ALLSET_VEC = LongVector.broadcast(SPECIES_L, -1L); // 0xFFFFFFFFFFFFFFFF
 
   // --------------------------------------------------------------------------
   // endregion
@@ -60,19 +69,19 @@ public final class UInt256Algo {
   // --------------------------------------------------------------------------
 
   /**
-   * Addition implem A
+   * Addition implem Int with Long widening 
    *
    * @param a The left multi-precision integer
    * @param b The right multi-precision integer
    * @return The sum
    */
-  public static byte[] addA(final byte[] a, final byte[] b) {
+  public static byte[] addIntWidening(final byte[] a, final byte[] b) {
     if (isZero(a)) return b;
     if (isZero(b)) return a;
     int[] aLimbs = bytesToInts(a);
     int[] bLimbs = bytesToInts(b);
-    int[] sum = new int[N_LIMBS];
-    addImplA(sum, aLimbs, bLimbs);
+    int[] sum = new int[INTSIZE];
+    addImplIntWidening(sum, aLimbs, bLimbs);
     return intsToBytes(sum, nLeadingZeroes(sum));
   }
 
@@ -83,13 +92,13 @@ public final class UInt256Algo {
    * @param b The right multi-precision integer
    * @return The sum
    */
-  public static byte[] addB(final byte[] a, final byte[] b) {
+  public static byte[] addIntAndCarry(final byte[] a, final byte[] b) {
     if (isZero(a)) return b;
     if (isZero(b)) return a;
     int[] aLimbs = bytesToInts(a);
     int[] bLimbs = bytesToInts(b);
-    int[] sum = new int[N_LIMBS];
-    addImplB(sum, aLimbs, bLimbs);
+    int[] sum = new int[INTSIZE];
+    addImplIntAndCarry(sum, aLimbs, bLimbs);
     return intsToBytes(sum, nLeadingZeroes(sum));
   }
 
@@ -100,12 +109,12 @@ public final class UInt256Algo {
    * @param b The right multi-precision integer
    * @return The sum
    */
-  public static byte[] addC(final byte[] a, final byte[] b) {
+  public static byte[] addByteVarLen(final byte[] a, final byte[] b) {
     if (isZero(a)) return b;
     if (isZero(b)) return a;
     int len = Math.max(a.length, b.length);
     byte[] sum = new byte[len];
-    byte carry = addImplC(sum, a, b);
+    byte carry = addImplByteVarLen(sum, a, b);
     byte[] result = sum;
     if (carry != 0) {
       result = new byte[sum.length + 1];
@@ -122,12 +131,284 @@ public final class UInt256Algo {
    * @param b The right multi-precision integer
    * @return The sum
    */
-  public static byte[] addD(final byte[] a, final byte[] b) {
+  public static byte[] addByteFixedLen(final byte[] a, final byte[] b) {
     if (isZero(a)) return b;
     if (isZero(b)) return a;
+    byte[] x;
+    byte[] y;
+    if (a.length < 32) {
+      x = new byte[32];
+      System.arraycopy(a, 0, x, 32 - a.length, a.length);
+    } else {
+      x = a;
+    }
+    if (b.length < 32) {
+      y = new byte[32];
+      System.arraycopy(b, 0, y, 32 - b.length, b.length);
+    } else {
+      y = b;
+    }
     byte[] sum = new byte[BYTESIZE];
-    addImplD(sum, a, b);
+    addImplByteFixedLen(sum, x, y);
     return sum;
+  }
+
+  /**
+   * Addition implementation E
+   *
+   * @param a The left multi-precision integer
+   * @param b The right multi-precision integer
+   * @return The sum
+   */
+  public static byte[] addByteDualFixedLen(final byte[] a, final byte[] b) {
+    if (isZero(a)) return b;
+    if (isZero(b)) return a;
+    int len = Math.min(a.length, b.length);
+    byte[] sum = new byte[BYTESIZE];
+    byte carry = addImplByteDualFixedLen(sum, a, b, len);
+    if (a.length > len) {
+      carry = addImplByteDualFixedLen(sum, a, carry, len);
+      len = a.length;
+    } else if (b.length > len) {
+      carry = addImplByteDualFixedLen(sum, b, carry, len);
+      len = b.length;
+    }
+    if (carry != 0 && len < BYTESIZE) sum[BYTESIZE - len - 1] = carry;
+    return sum;
+  }
+
+  public static byte[] addSIMDLong(final byte[] a, final byte[] b) {
+    if (isZero(a)) return b;
+    if (isZero(b)) return a;
+    long[] aL = bytesToLongs(a);
+    long[] bL = bytesToLongs(b);
+    long[] sum = new long[LONGSIZE];
+    addImplSIMDLong(sum, aL, bL);
+    return longsToBytes(sum);
+  }
+
+  public static byte[] addSIMDInt(final byte[] a, final byte[] b) {
+    if (isZero(a)) return b;
+    if (isZero(b)) return a;
+    int[] aI = bytesToInts(a);
+    int[] bI = bytesToInts(b);
+    int[] sum = new int[INTSIZE];
+    addImplSIMDInt(sum, aI, bI);
+    return intsToBytes(sum);
+  }
+
+  // ============================================================================
+  // SIMD Addition Support
+  // ============================================================================
+  //
+  // This section implements SIMD-accelerated 256-bit unsigned integer addition
+  // using the JDK Vector API (jdk.incubator.vector). The implementation treats
+  // 8 x 32-bit limbs as 4 x 64-bit lanes for hardware-accelerated parallel
+  // addition.
+  //
+  // Hardware Requirements:
+  // - x86-64 with AVX2 (256-bit SIMD) - widely available since 2013
+  // - ARM with NEON/SVE (alternative vector instruction sets)
+  //
+  // Performance Benefits:
+  // - 4 additions execute in parallel (SIMD lanes)
+  // - Reduced pipeline stalls from data dependencies
+  // - Efficient carry propagation via lookup table
+  // - JIT compiler generates native SIMD instructions (e.g., vpaddd, vpaddq)
+  //
+  // Algorithm Overview:
+  // 1. Load operands into 256-bit vectors (4 x 64-bit lanes)
+  // 2. Parallel addition across all lanes simultaneously
+  // 3. Detect per-lane carries using unsigned comparison (result < operand)
+  // 4. Detect cascade conditions (lanes with all 1s propagate carries)
+  // 5. Calculate cross-lane carry propagation (scalar operations)
+  // 6. Apply cascaded carries via lookup table
+  // 7. Return result with overflow flag
+  //
+  // Based on the reference implementation from .NET Runtime:
+  // https://github.com/dotnet/runtime/blob/main/src/libraries/System.Runtime.Numerics/src/System/UInt256.cs
+  // ============================================================================
+
+  // Lookup table for SIMD carry propagation
+  // Each entry represents carry values for 4 lanes based on cascade pattern (16 entries x 32 bytes)
+  private static final byte[] BROADCAST_LOOKUP = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+
+  /**
+   * SIMD-accelerated addition of two UInt256 values using JDK Vector API.
+   *
+   * <p>This implementation uses the JDK Vector API with 256-bit vectors (4 x 64-bit lanes) to
+   * perform hardware-accelerated parallel addition with carry propagation across lanes.
+   *
+   * <p>Requires: --add-modules jdk.incubator.vector
+   *
+   * @param a First UInt256 operand
+   * @param b Second UInt256 operand
+   * @return Result UInt256 containing a + b, and whether overflow occurred
+   */
+  public static int addImplSIMDLong(final long[] result, final long[] a, final long[] b) {
+    // Convert to 256-bit vectors with 4 x 64-bit lanes
+    LongVector aVec = LongVector.fromArray(SPECIES_L, a, 0);
+    LongVector bVec = LongVector.fromArray(SPECIES_L, b, 0);
+
+    // Lanewise add, carry and cascade
+    LongVector resultVec = aVec.add(bVec);
+    VectorMask<Long> carryMask = resultVec.compare(VectorOperators.UNSIGNED_LT, aVec);
+    VectorMask<Long> cascadeMask = resultVec.compare(VectorOperators.EQ, ALLSET_VEC);
+
+    // Calculate cross-lane carries using scalar operations
+    int carry = maskToInt(carryMask);
+    int cascade = maskToInt(cascadeMask);
+    carry = cascade + 2 * carry;
+    cascade ^= carry;
+    cascade &= 0x0f;
+
+    int lookupOffset = cascade * 32;
+    long[] cascadedCarries = new long[LONGSIZE];
+    for (int i = 0; i < LONGSIZE; i++) {
+      long value = 0;
+      for (int j = 0; j < 8; j++) {
+        value |= ((long) (BROADCAST_LOOKUP[lookupOffset + i * 8 + j] & 0xFF)) << (j * 8);
+      }
+      cascadedCarries[i] = value;
+    }
+
+    // Apply cascaded carries
+    LongVector carryVector = LongVector.fromArray(SPECIES_L, cascadedCarries, 0);
+    resultVec = resultVec.add(carryVector);
+    resultVec.intoArray(result, 0);
+    return ((carry & 0b1_0000) != 0) ? 1 : 0;
+  }
+
+  /**
+   * Convert a VectorMask to an integer bitmask.
+   *
+   * <p>Each bit represents whether the corresponding lane's mask is true.
+   *
+   * @param mask The vector mask to convert
+   * @return Integer bitmask where bit i is set if lane i's mask is true
+   */
+  private static int maskToInt(final VectorMask<Long> mask) {
+    int result = 0;
+    for (int i = 0; i < 4; i++) {
+      if (mask.laneIsSet(i)) {
+        result |= (1 << i);
+      }
+    }
+    return result;
+  }
+
+  /**
+   * SIMD-accelerated addition using IntVector (8 x 32-bit lanes).
+   *
+   * <p>This implementation uses IntVector for a more direct approach, performing parallel addition
+   * across all 8 limbs, then handling carry propagation sequentially.
+   *
+   * <p>Simpler than the LongVector approach but requires sequential carry propagation.
+   *
+   * @param a First UInt256 operand
+   * @param b Second UInt256 operand
+   * @return Result UInt256 containing a + b, and whether overflow occurred
+   */
+  public static int addImplSIMDInt(final int[] result, final int[] a, final int[] b) {
+    IntVector aVec = IntVector.fromArray(SPECIES, a, 0);
+    IntVector bVec = IntVector.fromArray(SPECIES, b, 0);
+    IntVector sumVec = aVec.add(bVec);
+    VectorMask<Integer> carryMask = sumVec.compare(VectorOperators.UNSIGNED_LT, aVec);
+
+    sumVec.intoArray(result, 0);
+    long carry = 0;
+    for (int i = 0; i < INTSIZE; i++) {
+      if (carryMask.laneIsSet(i)) {
+        carry = 1;
+      }
+
+      if (i < INTSIZE - 1 && carry != 0) {
+        long next = (result[i + 1] & MASK_L) + carry;
+        result[i + 1] = (int) next;
+        carry = next >>> 32;
+      }
+    }
+    return (int) carry;
   }
 
   /**
@@ -201,7 +482,7 @@ public final class UInt256Algo {
     int[] bLimbs = bytesToInts(b, nLeadingZeroes(b));
     int[] cLimbs = bytesToInts(c, nLeadingZeroes(c));
     int[] sum = new int[Math.max(aLimbs.length, bLimbs.length) + 1];
-    addImplA(sum, aLimbs, bLimbs);
+    addImplIntWidening(sum, aLimbs, bLimbs);
     int[] remainder = knuthRemainder(sum, cLimbs);
     return intsToBytes(remainder, nLeadingZeroes(remainder));
   }
@@ -351,21 +632,7 @@ public final class UInt256Algo {
    * @return Big-endian UInt256 represented by the bytes.
    */
   private static int[] bytesToInts(final byte[] bytes) {
-    // Unchecked : bytes.length <= BYTESIZE
-    int[] limbs = new int[N_LIMBS];
-    if (bytes.length == 0) return limbs;
-    int i = N_LIMBS - 1; // Index in int array
-    int b = bytes.length - 1; // Index in bytes array
-    int limb;
-    for (; b >= 0; i--) {
-      int shift = 0;
-      limb = 0;
-      for (int j = 0; j < 4 && b >= 0; j++, b--, shift += 8) {
-        limb |= ((bytes[b] & 0xFF) << shift);
-      }
-      limbs[i] = limb;
-    }
-    return limbs;
+    return bytesToInts(bytes, 0);
   }
 
   /**
@@ -375,9 +642,9 @@ public final class UInt256Algo {
    * @return Big-endian UInt256 represented by the bytes.
    */
   private static int[] bytesToInts(final byte[] bytes, final int msb) {
-    if (bytes.length == 0 || msb == -1 || msb >= bytes.length) return new int[0];
-    int[] limbs = new int[N_LIMBS];
-    int i = N_LIMBS - 1; // Index in int array
+    if (bytes.length == 0 || msb == -1 || msb >= bytes.length) return new int[INTSIZE];
+    int[] limbs = new int[INTSIZE];
+    int i = INTSIZE - 1; // Index in int array
     int b = bytes.length - 1; // Index in bytes array
     int limb;
     for (; b >= msb; i--) {
@@ -413,6 +680,69 @@ public final class UInt256Algo {
       result[j + 1] = (byte) (value >>> 16);
       result[j + 2] = (byte) (value >>> 8);
       result[j + 3] = (byte) value;
+    }
+    return result;
+  }
+
+  /**
+   * Instantiates a new UInt256 from byte array.
+   *
+   * @param bytes raw bytes in BigEndian order.
+   * @return Big-endian UInt256 represented by the bytes.
+   */
+  private static long[] bytesToLongs(final byte[] bytes) {
+    return bytesToLongs(bytes, 0);
+  }
+
+  /**
+   * Instantiates a new UInt256 from byte array.
+   *
+   * @param bytes raw bytes in BigEndian order.
+   * @return Big-endian UInt256 represented by the bytes.
+   */
+  private static long[] bytesToLongs(final byte[] bytes, final int msb) {
+    long[] limbs = new long[LONGSIZE];
+    if (bytes.length == 0 || msb == -1 || msb >= bytes.length) return limbs;
+    int i = LONGSIZE - 1; // Index in int array
+    int b = bytes.length - 1; // Index in bytes array
+    long limb;
+    for (; b >= msb; i--) {
+      int shift = 0;
+      limb = 0;
+      for (int j = 0; j < 8 && b >= msb; j++, b--, shift += 8) {
+        limb |= ((bytes[b] & 0xFF) << shift);
+      }
+      limbs[i] = limb;
+    }
+    return limbs;
+  }
+
+  /**
+   * Convert to BigEndian byte array.
+   *
+   * @return Big-endian ordered bytes for this UInt256 value.
+   */
+  private static byte[] longsToBytes(final long[] a) {
+    return longsToBytes(a, 0);
+  }
+
+  /**
+   * Convert to BigEndian byte array.
+   *
+   * @return Big-endian ordered bytes for this UInt256 value.
+   */
+  private static byte[] longsToBytes(final long[] a, final int offset) {
+    byte[] result = new byte[8 * (a.length - offset)];
+    for (int i = offset, j = 0; i < a.length; i++, j += 8) {
+      long value = a[i];
+      result[j] = (byte) (value >>> 56);
+      result[j + 1] = (byte) (value >>> 48);
+      result[j + 2] = (byte) (value >>> 40);
+      result[j + 3] = (byte) (value >>> 32);
+      result[j + 4] = (byte) (value >>> 24);
+      result[j + 5] = (byte) (value >>> 16);
+      result[j + 6] = (byte) (value >>> 8);
+      result[j + 7] = (byte) value;
     }
     return result;
   }
@@ -566,10 +896,10 @@ public final class UInt256Algo {
     return carry;
   }
 
-  private static int addImplA(final int[] sum, final int[] a, final int[] b) {
-    // Unchecked: result.length > N_LIMBS
-    // Unchecked: x.length == y.length == N_LIMBS
-    // Unchecked: N_LIMBS == 8
+  private static int addImplIntWidening(final int[] sum, final int[] a, final int[] b) {
+    // Unchecked: result.length > INTSIZE
+    // Unchecked: x.length == y.length == INTSIZE
+    // Unchecked: INTSIZE == 8
     long carry = 0;
     int i = sum.length - 1;
     carry = adcL(sum, a[7], b[7], carry, i--);
@@ -592,7 +922,7 @@ public final class UInt256Algo {
     return s >>> N_BITS_PER_LIMB;
   }
 
-  private static int addImplB(final int[] sum, final int[] a, final int[] b) {
+  private static int addImplIntAndCarry(final int[] sum, final int[] a, final int[] b) {
     // Unchecked both length 8
     int carry = 0;
     carry = adc(sum, a, b, carry, 7);
@@ -616,7 +946,7 @@ public final class UInt256Algo {
     return carryOut;
   }
 
-  private static byte addImplC(final byte[] result, final byte[] a, final byte[] b) {
+  private static byte addImplByteVarLen(final byte[] result, final byte[] a, final byte[] b) {
     byte[] x;
     byte[] y;
     if (a.length < b.length) {
@@ -648,7 +978,7 @@ public final class UInt256Algo {
     return (byte) carry;
   }
 
-  private static byte addImplD(final byte[] result, final byte[] a, final byte[] b) {
+  private static byte addImplByteFixedLen(final byte[] result, final byte[] a, final byte[] b) {
     int i = BYTESIZE - 1;
     int carry = 0;
     for (; i >= 0; i--) {
@@ -659,6 +989,38 @@ public final class UInt256Algo {
       carry = sum >>> 8;
     }
     return (byte) carry;
+  }
+
+  private static byte addImplByteDualFixedLen(final byte[] result, final byte[] a, final byte[] b, final int len) {
+    int i = a.length - 1;
+    int j = b.length - 1;
+    int k = result.length - 1;
+    int carry = 0;
+    for (; k >= result.length - len; i--, j--, k--) carry = adc(result, k, a[i], b[j], carry);	
+    return (byte) carry;
+  }
+
+  private static byte addImplByteDualFixedLen(final byte[] result, final byte[] a, final int carry, final int len) {
+    int i = a.length - len - 1;
+    int k = result.length - len - 1;
+    int c = carry;
+    for (; i >= 0; i--, k--) c = adc(result, k, a[i], c);
+    return (byte) c;
+  }
+
+  private static int adc(final byte[] result, final int index, final byte a, final byte b, final int carry) {
+    int ai = a & 0xFF;
+    int bi = b & 0xFF;
+    int sum = ai + bi + carry;
+    result[index] = (byte) sum;
+    return sum >>> 8;
+  }
+
+  private static int adc(final byte[] result, final int index, final byte a, final int carry) {
+    int ai = a & 0xFF;
+    int sum = ai + carry;
+    result[index] = (byte) sum;
+    return sum >>> 8;
   }
 
   private static int[] addMul(final int[] a, final int aOffset, final int[] b, final int bOffset) {
@@ -726,7 +1088,7 @@ public final class UInt256Algo {
     int xLen = x.length - xOffset;
     int yLen = y.length - yOffset;
     int maxLen = xLen + yLen + 1;
-    int resLen = Math.min(N_LIMBS, maxLen);
+    int resLen = Math.min(INTSIZE, maxLen);
     int[] result = new int[resLen];
 
     for (int i = y.length - 1, m = resLen - 1; i >= yOffset && m >= 0; i--, m--) {
@@ -740,7 +1102,7 @@ public final class UInt256Algo {
         carry = sum >>> N_BITS_PER_LIMB;
       }
 
-      // Propagate leftover carry, but only within N_LIMBS bounds
+      // Propagate leftover carry, but only within INTSIZE bounds
       while (carry != 0 && k >= 0) {
         long sum = (result[k] & MASK_L) + carry;
         result[k] = (int) sum;
@@ -754,14 +1116,14 @@ public final class UInt256Algo {
 
   private static int[] knuthRemainder(final int[] dividend, final int[] modulus) {
     // Unchecked: modulus is non Zero and non One.
-    int[] result = new int[N_LIMBS];
+    int[] result = new int[INTSIZE];
     int modLen = effectiveLength(modulus);
     int divLen = effectiveLength(dividend);
 
     // Shortcut: if dividend < modulus or dividend == modulus
     int cmp = compareLimbs(dividend, modulus);
     if (cmp < 0) {
-      System.arraycopy(dividend, dividend.length - divLen, result, N_LIMBS - divLen, divLen);
+      System.arraycopy(dividend, dividend.length - divLen, result, INTSIZE - divLen, divLen);
       return result;
     } else if (cmp == 0) {
       return result;
@@ -770,7 +1132,7 @@ public final class UInt256Algo {
     // Shortcut: if modulus has a single limb
     if (modLen == 1) {
       if (divLen == 1) {
-        result[N_LIMBS - 1] =
+        result[INTSIZE - 1] =
             Integer.remainderUnsigned(dividend[dividend.length - 1], modulus[modulus.length - 1]);
         return result;
       }
@@ -781,8 +1143,8 @@ public final class UInt256Algo {
         long cur = (rem << 32) | (dividend[i] & MASK_L);
         rem = Long.remainderUnsigned(cur, d);
       }
-      result[N_LIMBS - 1] = (int) rem;
-      result[N_LIMBS - 2] = (int) (rem >>> 32);
+      result[INTSIZE - 1] = (int) rem;
+      result[INTSIZE - 2] = (int) (rem >>> 32);
       return result;
     }
 

@@ -653,6 +653,8 @@ subprojects {
       jvmArgs = [
         '-XX:+EnableDynamicAgentLoading'
       ]
+      jvmArgs.addAll(['--add-modules', 'jdk.incubator.vector'])
+
       if (asyncProfiler != null) {
         profilers = [
           'async:libPath=' + asyncProfiler + ';' + asyncProfilerOptions

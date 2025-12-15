@@ -59,17 +59,17 @@ public class UInt256AlgoPropertyTest {
 
   // endregion
 
-  // region Addition Tests (addA, addB, addC, addD)
+  // region Addition Tests (addIntWidening, addIntAndCarry, addByteVarLen, addByteFixedLen)
 
   @Property
-  void property_addA_matchesBigInteger(
+  void property_addIntWidening_matchesBigInteger(
       @ForAll("unsigned1to32") final byte[] a, @ForAll("unsigned1to32") final byte[] b) {
     // Arrange
     BigInteger A = toBigUnsigned(a);
     BigInteger B = toBigUnsigned(b);
 
     // Act
-    byte[] result = UInt256Algo.addA(a, b);
+    byte[] result = UInt256Algo.addIntWidening(a, b);
 
     // Assert - compare with BigInteger addition (mod 2^256)
     byte[] expected = bigUnsignedToBytes(A.add(B));
@@ -77,14 +77,14 @@ public class UInt256AlgoPropertyTest {
   }
 
   @Property
-  void property_addB_matchesBigInteger(
+  void property_addIntAndCarry_matchesBigInteger(
       @ForAll("unsigned1to32") final byte[] a, @ForAll("unsigned1to32") final byte[] b) {
     // Arrange
     BigInteger A = toBigUnsigned(a);
     BigInteger B = toBigUnsigned(b);
 
     // Act
-    byte[] result = UInt256Algo.addB(a, b);
+    byte[] result = UInt256Algo.addIntAndCarry(a, b);
 
     // Assert
     byte[] expected = bigUnsignedToBytes(A.add(B));
@@ -92,14 +92,14 @@ public class UInt256AlgoPropertyTest {
   }
 
   @Property
-  void property_addC_matchesBigInteger(
+  void property_addByteVarLen_matchesBigInteger(
       @ForAll("unsigned1to32") final byte[] a, @ForAll("unsigned1to32") final byte[] b) {
     // Arrange
     BigInteger A = toBigUnsigned(a);
     BigInteger B = toBigUnsigned(b);
 
     // Act
-    byte[] result = UInt256Algo.addC(a, b);
+    byte[] result = UInt256Algo.addByteVarLen(a, b);
 
     // Assert
     byte[] expected = bigUnsignedToBytes(A.add(B));
@@ -107,14 +107,14 @@ public class UInt256AlgoPropertyTest {
   }
 
   @Property
-  void property_addD_matchesBigInteger(
+  void property_addByteFixedLen_matchesBigInteger(
       @ForAll("unsigned1to32") final byte[] a, @ForAll("unsigned1to32") final byte[] b) {
     // Arrange
     BigInteger A = toBigUnsigned(a);
     BigInteger B = toBigUnsigned(b);
 
     // Act
-    byte[] result = UInt256Algo.addD(a, b);
+    byte[] result = UInt256Algo.addByteFixedLen(a, b);
 
     // Assert
     byte[] expected = bigUnsignedToBytes(A.add(B));
@@ -125,10 +125,10 @@ public class UInt256AlgoPropertyTest {
   void property_add_implementations_consistent(
       @ForAll("unsigned1to32") final byte[] a, @ForAll("unsigned1to32") final byte[] b) {
     // Act
-    byte[] resultA = UInt256Algo.addA(a, b);
-    byte[] resultB = UInt256Algo.addB(a, b);
-    byte[] resultC = UInt256Algo.addC(a, b);
-    byte[] resultD = UInt256Algo.addD(a, b);
+    byte[] resultA = UInt256Algo.addIntWidening(a, b);
+    byte[] resultB = UInt256Algo.addIntAndCarry(a, b);
+    byte[] resultC = UInt256Algo.addByteVarLen(a, b);
+    byte[] resultD = UInt256Algo.addByteFixedLen(a, b);
 
     // Assert - all implementations should produce same result
     assertThat(UInt256Algo.compare(resultA, resultB)).isEqualTo(0);
@@ -140,10 +140,10 @@ public class UInt256AlgoPropertyTest {
   void property_add_commutative(
       @ForAll("unsigned1to32") final byte[] a, @ForAll("unsigned1to32") final byte[] b) {
     // Act & Assert - A + B = B + A
-    assertThat(UInt256Algo.compare(UInt256Algo.addA(a, b), UInt256Algo.addA(b, a))).isEqualTo(0);
-    assertThat(UInt256Algo.compare(UInt256Algo.addB(a, b), UInt256Algo.addB(b, a))).isEqualTo(0);
-    assertThat(UInt256Algo.compare(UInt256Algo.addC(a, b), UInt256Algo.addC(b, a))).isEqualTo(0);
-    assertThat(UInt256Algo.compare(UInt256Algo.addD(a, b), UInt256Algo.addD(b, a))).isEqualTo(0);
+    assertThat(UInt256Algo.compare(UInt256Algo.addIntWidening(a, b), UInt256Algo.addIntWidening(b, a))).isEqualTo(0);
+    assertThat(UInt256Algo.compare(UInt256Algo.addIntAndCarry(a, b), UInt256Algo.addIntAndCarry(b, a))).isEqualTo(0);
+    assertThat(UInt256Algo.compare(UInt256Algo.addByteVarLen(a, b), UInt256Algo.addByteVarLen(b, a))).isEqualTo(0);
+    assertThat(UInt256Algo.compare(UInt256Algo.addByteFixedLen(a, b), UInt256Algo.addByteFixedLen(b, a))).isEqualTo(0);
   }
 
   @Property
@@ -152,8 +152,8 @@ public class UInt256AlgoPropertyTest {
       @ForAll("unsigned1to32") final byte[] b,
       @ForAll("unsigned1to32") final byte[] c) {
     // Act & Assert - (A + B) + C = A + (B + C) with wrapping
-    byte[] left = UInt256Algo.addA(UInt256Algo.addA(a, b), c);
-    byte[] right = UInt256Algo.addA(a, UInt256Algo.addA(b, c));
+    byte[] left = UInt256Algo.addIntWidening(UInt256Algo.addIntWidening(a, b), c);
+    byte[] right = UInt256Algo.addIntWidening(a, UInt256Algo.addIntWidening(b, c));
     assertThat(UInt256Algo.compare(left, right)).isEqualTo(0);
   }
 
@@ -163,8 +163,8 @@ public class UInt256AlgoPropertyTest {
     byte[] zero = new byte[0];
 
     // Act & Assert - A + 0 = A
-    assertThat(UInt256Algo.compare(UInt256Algo.addA(a, zero), a)).isEqualTo(0);
-    assertThat(UInt256Algo.compare(UInt256Algo.addA(zero, a), a)).isEqualTo(0);
+    assertThat(UInt256Algo.compare(UInt256Algo.addIntWidening(a, zero), a)).isEqualTo(0);
+    assertThat(UInt256Algo.compare(UInt256Algo.addIntWidening(zero, a), a)).isEqualTo(0);
   }
 
   @Property
@@ -175,7 +175,7 @@ public class UInt256AlgoPropertyTest {
     byte[] one = new byte[] {1};
 
     // Act
-    byte[] result = UInt256Algo.addA(maxValue, one);
+    byte[] result = UInt256Algo.addIntWidening(maxValue, one);
 
     // Assert - wraps to zero (modulo 2^256)
     byte[] expected = bigUnsignedToBytes(BigInteger.ZERO);
@@ -245,8 +245,8 @@ public class UInt256AlgoPropertyTest {
       @ForAll("unsigned1to32") final byte[] b,
       @ForAll("unsigned1to32") final byte[] c) {
     // Act - A * (B + C) = (A * B) + (A * C) with wrapping
-    byte[] left = UInt256Algo.mul(a, UInt256Algo.addA(b, c));
-    byte[] right = UInt256Algo.addA(UInt256Algo.mul(a, b), UInt256Algo.mul(a, c));
+    byte[] left = UInt256Algo.mul(a, UInt256Algo.addIntWidening(b, c));
+    byte[] right = UInt256Algo.addIntWidening(UInt256Algo.mul(a, b), UInt256Algo.mul(a, c));
 
     // Assert
     assertThat(UInt256Algo.compare(left, right)).isEqualTo(0);

@@ -37,7 +37,7 @@ import org.openjdk.jmh.infra.Blackhole;
 @OutputTimeUnit(value = TimeUnit.NANOSECONDS)
 @BenchmarkMode(Mode.AverageTime)
 public class UInt256AlgoAddBenchmark {
-  // Benchmarks for UInt256Algo addA, addB, addC, and addD implementations
+  // Benchmarks for Addition
 
   protected static final int SAMPLE_SIZE = 30_000;
 
@@ -121,8 +121,8 @@ public class UInt256AlgoAddBenchmark {
       random.nextBytes(b);
 
       // Ensure positive numbers by clearing sign bit
-      if (a.length > 0) a[0] = (byte) (a[0] & 0x7F);
-      if (b.length > 0) b[0] = (byte) (b[0] & 0x7F);
+      // if (a.length > 0) a[0] = (byte) (a[0] & 0x7F);
+      // if (b.length > 0) b[0] = (byte) (b[0] & 0x7F);
 
       aPool[i] = a;
       bPool[i] = b;
@@ -130,27 +130,45 @@ public class UInt256AlgoAddBenchmark {
     index = 0;
   }
 
+  // @Benchmark
+  // public void addIntWidening(final Blackhole blackhole) {
+  //   blackhole.consume(UInt256Algo.addIntWidening(aPool[index], bPool[index]));
+  //   index = (index + 1) % SAMPLE_SIZE;
+  // }
+
+  // @Benchmark
+  // public void addIntAndCarry(final Blackhole blackhole) {
+  //   blackhole.consume(UInt256Algo.addIntAndCarry(aPool[index], bPool[index]));
+  //   index = (index + 1) % SAMPLE_SIZE;
+  // }
+
+  // @Benchmark
+  // public void addByteVarLen(final Blackhole blackhole) {
+    // blackhole.consume(UInt256Algo.addByteVarLen(aPool[index], bPool[index]));
+    // index = (index + 1) % SAMPLE_SIZE;
+  // }
+
+  // @Benchmark
+  // public void addByteFixedLen(final Blackhole blackhole) {
+    // blackhole.consume(UInt256Algo.addByteFixedLen(aPool[index], bPool[index]));
+    // index = (index + 1) % SAMPLE_SIZE;
+  // }
+
+  // @Benchmark
+  // public void addByteDualFixedLen(final Blackhole blackhole) {
+    // blackhole.consume(UInt256Algo.addByteFixedLen(aPool[index], bPool[index]));
+    // index = (index + 1) % SAMPLE_SIZE;
+  // }
+
   @Benchmark
-  public void addA(final Blackhole blackhole) {
-    blackhole.consume(UInt256Algo.addA(aPool[index], bPool[index]));
+  public void addSIMDLong(final Blackhole blackhole) {
+    blackhole.consume(UInt256Algo.addSIMDLong(aPool[index], bPool[index]));
     index = (index + 1) % SAMPLE_SIZE;
   }
 
   @Benchmark
-  public void addB(final Blackhole blackhole) {
-    blackhole.consume(UInt256Algo.addB(aPool[index], bPool[index]));
-    index = (index + 1) % SAMPLE_SIZE;
-  }
-
-  @Benchmark
-  public void addC(final Blackhole blackhole) {
-    blackhole.consume(UInt256Algo.addC(aPool[index], bPool[index]));
-    index = (index + 1) % SAMPLE_SIZE;
-  }
-
-  @Benchmark
-  public void addD(final Blackhole blackhole) {
-    blackhole.consume(UInt256Algo.addD(aPool[index], bPool[index]));
+  public void addSIMDInt(final Blackhole blackhole) {
+    blackhole.consume(UInt256Algo.addSIMDInt(aPool[index], bPool[index]));
     index = (index + 1) % SAMPLE_SIZE;
   }
 }

@@ -17,6 +17,30 @@
 apply plugin: 'java-library'
 apply plugin: 'idea'
 
+// Enable Vector API incubator module for SIMD acceleration
+tasks.withType(JavaCompile).configureEach {
+  options.compilerArgs += [
+    '--add-modules',
+    'jdk.incubator.vector'
+  ]
+  // Remove -Werror if present to allow incubator module warnings
+  options.compilerArgs.removeAll { it == '-Werror' }
+}
+
+tasks.withType(Test).configureEach {
+  jvmArgs += [
+    '--add-modules',
+    'jdk.incubator.vector'
+  ]
+}
+
+tasks.withType(JavaExec).configureEach {
+  jvmArgs += [
+    '--add-modules',
+    'jdk.incubator.vector'
+  ]
+}
+
 jar {
   archiveBaseName = calculateArtifactId(project)
   manifest {
@@ -26,7 +50,8 @@ jar {
       'Implementation-Title': archiveBaseName,
       'Implementation-Version': calculateVersion(),
       'Commit-Hash': getGitCommitDetails(40).hash,
-      'Automatic-Module-Name': 'org.hyperledger.besu.evm'
+      'Automatic-Module-Name': 'org.hyperledger.besu.evm',
+      'Add-Opens': 'jdk.incubator.vector'
       )
   }
 }
