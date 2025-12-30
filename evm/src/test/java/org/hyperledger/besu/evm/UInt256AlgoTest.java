@@ -299,6 +299,125 @@ public class UInt256AlgoTest {
 
   // endregion
 
+  // region ModLongs Tests
+
+  @Test
+  public void testModLongs_simple() {
+    byte[] a = new byte[] {23};
+    byte[] b = new byte[] {5};
+    byte[] result = UInt256Algo.modLongs(a, b);
+    byte[] expected = new byte[] {3}; // 23 % 5 = 3
+    assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
+  }
+
+  @Test
+  public void testModLongs_dividendSmallerThanModulus() {
+    byte[] a = new byte[] {5};
+    byte[] b = new byte[] {10};
+    byte[] result = UInt256Algo.modLongs(a, b);
+    byte[] expected = new byte[] {5};
+    assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
+  }
+
+  @Test
+  public void testModLongs_dividendEqualsModulus() {
+    byte[] a = new byte[] {42};
+    byte[] b = new byte[] {42};
+    byte[] result = UInt256Algo.modLongs(a, b);
+    assertArrayEquals(new byte[0], result);
+  }
+
+  @Test
+  public void testModLongs_byZero() {
+    byte[] a = new byte[] {42};
+    byte[] zero = new byte[0];
+    byte[] result = UInt256Algo.modLongs(a, zero);
+    assertArrayEquals(new byte[0], result);
+  }
+
+  @Test
+  public void testModLongs_zeroModAnything() {
+    byte[] zero = new byte[0];
+    byte[] b = new byte[] {42};
+    byte[] result = UInt256Algo.modLongs(zero, b);
+    assertArrayEquals(new byte[0], result);
+  }
+
+  @Test
+  public void testModLongs_largeNumbers() {
+    BigInteger aBig = new BigInteger("cea0c5cc171fa61277e5604a3bc8aef4de3d3882", 16);
+    BigInteger bBig = new BigInteger("7dae7454bb193b1c28e64a6a935bc3", 16);
+    byte[] a = bigIntToBytes(aBig);
+    byte[] b = bigIntToBytes(bBig);
+    byte[] result = UInt256Algo.modLongs(a, b);
+    byte[] expected = bigIntToBytes(aBig.mod(bBig));
+    assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
+  }
+
+  @Test
+  public void testModLongs_veryLargeNumbers() {
+    // Test with numbers that use multiple long limbs
+    BigInteger aBig =
+        new BigInteger("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 16);
+    BigInteger bBig = new BigInteger("123456789abcdef0123456789abcdef", 16);
+    byte[] a = bigIntToBytes(aBig);
+    byte[] b = bigIntToBytes(bBig);
+    byte[] result = UInt256Algo.modLongs(a, b);
+    byte[] expected = bigIntToBytes(aBig.mod(bBig));
+    assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
+  }
+
+  @Test
+  public void testModLongs_powerOfTwo() {
+    // Test modulo by power of 2
+    byte[] a = new byte[] {(byte) 0xFF, (byte) 0xFF};
+    byte[] b = new byte[] {1, 0}; // 256
+    byte[] result = UInt256Algo.modLongs(a, b);
+    byte[] expected = new byte[] {(byte) 0xFF}; // 65535 % 256 = 255
+    assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
+  }
+
+  @Test
+  public void testModLongs_consistentWithMod() {
+    // Test that modLongs produces the same results as mod
+    BigInteger aBig = new BigInteger("123456789abcdef0123456789", 16);
+    BigInteger bBig = new BigInteger("fedcba987654321", 16);
+    byte[] a = bigIntToBytes(aBig);
+    byte[] b = bigIntToBytes(bBig);
+
+    byte[] resultModLongs = UInt256Algo.modLongs(a, b);
+    byte[] resultMod = UInt256Algo.mod(a, b);
+
+    assertThat(UInt256Algo.compare(resultModLongs, resultMod)).isEqualTo(0);
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {1, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31})
+  public void testModLongs_byPrimes(final int prime) {
+    byte[] a = new byte[] {100};
+    byte[] p = new byte[] {(byte) prime};
+    byte[] result = UInt256Algo.modLongs(a, p);
+    byte[] expected = new byte[] {(byte) (100 % prime)};
+    assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
+  }
+
+  @Test
+  public void testModLongs_maxValue() {
+    // Test with maximum 256-bit value
+    byte[] max = new byte[32];
+    Arrays.fill(max, (byte) 0xFF);
+    byte[] divisor = new byte[] {(byte) 0xFF, (byte) 0xFF};
+
+    byte[] result = UInt256Algo.modLongs(max, divisor);
+    BigInteger maxBig = new BigInteger(1, max);
+    BigInteger divisorBig = new BigInteger(1, divisor);
+    byte[] expected = bigIntToBytes(maxBig.mod(divisorBig));
+
+    assertThat(UInt256Algo.compare(result, expected)).isEqualTo(0);
+  }
+
+  // endregion
+
   // region Signed Modulo Tests
 
   @Test

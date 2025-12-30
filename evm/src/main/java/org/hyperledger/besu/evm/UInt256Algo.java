@@ -55,12 +55,35 @@ public final class UInt256Algo {
       };
   // For int, we accomodate up to a result of a multiplication
   private static final int[] ZERO_INTS = new int[INTSIZE + INTSIZE + 1];
+  private static final long[] ZERO_LONGS = new long[LONGSIZE + LONGSIZE + 1];
 
   // SIMD Vector Species
   private static final VectorSpecies<Integer> SPECIES = IntVector.SPECIES_256;
   private static final VectorSpecies<Long> SPECIES_L = LongVector.SPECIES_256;
   // Vectors utils
   private static final LongVector ALLSET_VEC = LongVector.broadcast(SPECIES_L, -1L); // 0xFFFFFFFFFFFFFFFF
+
+  // LookUp Table for reciprocal in long division
+  private static final short[] LUT = new short[] {
+        2045, 2037, 2029, 2021, 2013, 2005, 1998, 1990, 1983, 1975, 1968, 1960, 1953, 1946, 1938,
+        1931, 1924, 1917, 1910, 1903, 1896, 1889, 1883, 1876, 1869, 1863, 1856, 1849, 1843, 1836,
+        1830, 1824, 1817, 1811, 1805, 1799, 1792, 1786, 1780, 1774, 1768, 1762, 1756, 1750, 1745,
+        1739, 1733, 1727, 1722, 1716, 1710, 1705, 1699, 1694, 1688, 1683, 1677, 1672, 1667, 1661,
+        1656, 1651, 1646, 1641, 1636, 1630, 1625, 1620, 1615, 1610, 1605, 1600, 1596, 1591, 1586,
+        1581, 1576, 1572, 1567, 1562, 1558, 1553, 1548, 1544, 1539, 1535, 1530, 1526, 1521, 1517,
+        1513, 1508, 1504, 1500, 1495, 1491, 1487, 1483, 1478, 1474, 1470, 1466, 1462, 1458, 1454,
+        1450, 1446, 1442, 1438, 1434, 1430, 1426, 1422, 1418, 1414, 1411, 1407, 1403, 1399, 1396,
+        1392, 1388, 1384, 1381, 1377, 1374, 1370, 1366, 1363, 1359, 1356, 1352, 1349, 1345, 1342,
+        1338, 1335, 1332, 1328, 1325, 1322, 1318, 1315, 1312, 1308, 1305, 1302, 1299, 1295, 1292,
+        1289, 1286, 1283, 1280, 1276, 1273, 1270, 1267, 1264, 1261, 1258, 1255, 1252, 1249, 1246,
+        1243, 1240, 1237, 1234, 1231, 1228, 1226, 1223, 1220, 1217, 1214, 1211, 1209, 1206, 1203,
+        1200, 1197, 1195, 1192, 1189, 1187, 1184, 1181, 1179, 1176, 1173, 1171, 1168, 1165, 1163,
+        1160, 1158, 1155, 1153, 1150, 1148, 1145, 1143, 1140, 1138, 1135, 1133, 1130, 1128, 1125,
+        1123, 1121, 1118, 1116, 1113, 1111, 1109, 1106, 1104, 1102, 1099, 1097, 1095, 1092, 1090,
+        1088, 1086, 1083, 1081, 1079, 1077, 1074, 1072, 1070, 1068, 1066, 1064, 1061, 1059, 1057,
+        1055, 1053, 1051, 1049, 1047, 1044, 1042, 1040, 1038, 1036, 1034, 1032, 1030, 1028, 1026,
+        1024,
+  };
 
   // --------------------------------------------------------------------------
   // endregion
@@ -69,7 +92,7 @@ public final class UInt256Algo {
   // --------------------------------------------------------------------------
 
   /**
-   * Addition implem Int with Long widening 
+   * Addition implem Int with Long widening
    *
    * @param a The left multi-precision integer
    * @param b The right multi-precision integer
@@ -444,6 +467,21 @@ public final class UInt256Algo {
   }
 
   /**
+   * Unsigned modulo reduction.
+   *
+   * @param a The dividend
+   * @param b The modulus
+   * @return The remainder of dividend modulo {@code modulus}.
+   */
+  public static byte[] modLongs(final byte[] a, final byte[] b) {
+    if (isZero(a) || isZero(b)) return new byte[0];
+    long[] aLimbs = bytesToLongs(a, nLeadingZeroes(a));
+    long[] bLimbs = bytesToLongs(b, nLeadingZeroes(b));
+    long[] remainder = knuthRemainder(aLimbs, bLimbs);
+    return longsToBytes(remainder, nLeadingZeroes(remainder));
+  }
+
+  /**
    * Signed modulo reduction.
    *
    * <p>In signed modulo reduction, integers are interpretated as fixed 256 bits width two's
@@ -617,6 +655,10 @@ public final class UInt256Algo {
     return Arrays.mismatch(a, ZERO_INTS); // Most significant byte index
   }
 
+  private static int nLeadingZeroes(final long[] a) {
+    return Arrays.mismatch(a, ZERO_LONGS); // Most significant byte index
+  }
+
   // private static int effectiveLength(final byte[] a) {
   //   return a.length - nLeadingZeroes(a);
   // }
@@ -710,7 +752,7 @@ public final class UInt256Algo {
       int shift = 0;
       limb = 0;
       for (int j = 0; j < 8 && b >= msb; j++, b--, shift += 8) {
-        limb |= ((bytes[b] & 0xFF) << shift);
+        limb |= ((bytes[b] & 0xFFL) << shift);
       }
       limbs[i] = limb;
     }
@@ -837,6 +879,23 @@ public final class UInt256Algo {
     }
   }
 
+  // Comparing two int subarrays as big-endian multi-precision integers.
+  private static int compareLimbs(final long[] a, final long[] b) {
+    if (a.length >= b.length) {
+      int diffLen = a.length - b.length;
+      int cmp = Arrays.mismatch(a, 0, diffLen, ZERO_LONGS, 0, diffLen);
+      if (cmp != -1) return 1;
+      int i = Arrays.mismatch(a, diffLen, a.length, b, 0, b.length);
+      return (i == -1) ? 0 : Long.compareUnsigned(a[i + diffLen], b[i]);
+    } else {
+      int diffLen = b.length - a.length;
+      int cmp = Arrays.mismatch(b, 0, diffLen, ZERO_LONGS, 0, diffLen);
+      if (cmp != -1) return -1;
+      int i = Arrays.mismatch(a, 0, a.length, b, diffLen, b.length);
+      return (i == -1) ? 0 : Long.compareUnsigned(a[i], b[i + diffLen]);
+    }
+  }
+
   // Does two-complements represent a negative number: i.e. is leading bit set ?
   private static boolean isNeg(final int[] x) {
     return x[0] < 0;
@@ -877,6 +936,26 @@ public final class UInt256Algo {
     return carry;
   }
 
+  private static long shiftLeftInto(
+      final long[] result, final long[] x, final int xOffset, final int shift) {
+    // Unchecked: result should be initialised with zeroes
+    // Unchecked: result length should be at least x.length + 1
+    // Unchecked: 0 <= shift < N_BITS_PER_LIMB
+    if (shift == 0) {
+      int xLen = x.length - xOffset;
+      int resultOffset = result.length - xLen;
+      System.arraycopy(x, xOffset, result, resultOffset, xLen);
+      return 0;
+    }
+    long carry = 0;
+    int j = result.length - 1;
+    for (int i = x.length - 1; i >= xOffset; i--, j--) {
+      result[j] = (x[i] << shift) | carry;
+      carry = x[i] >>> (64 - shift);
+    }
+    return carry;
+  }
+
   private static int shiftRightInto(
       final int[] result, final int[] x, final int xOffset, final int shift) {
     // Unchecked: result length should be at least x.length
@@ -892,6 +971,25 @@ public final class UInt256Algo {
     for (int i = xOffset; i < x.length; i++, j++) {
       result[j] = (x[i] >>> shift) | carry;
       carry = x[i] << (N_BITS_PER_LIMB - shift);
+    }
+    return carry;
+  }
+
+  private static long shiftRightInto(
+      final long[] result, final long[] x, final int xOffset, final int shift) {
+    // Unchecked: result length should be at least x.length
+    // Unchecked: 0 <= shift < N_BITS_PER_LIMB
+    if (shift == 0) {
+      int xLen = x.length - xOffset;
+      int resultOffset = result.length - xLen;
+      System.arraycopy(x, xOffset, result, resultOffset, xLen);
+      return 0;
+    }
+    long carry = 0;
+    int j = result.length - x.length + xOffset;
+    for (int i = xOffset; i < x.length; i++, j++) {
+      result[j] = (x[i] >>> shift) | carry;
+      carry = x[i] << (64 - shift);
     }
     return carry;
   }
@@ -996,7 +1094,7 @@ public final class UInt256Algo {
     int j = b.length - 1;
     int k = result.length - 1;
     int carry = 0;
-    for (; k >= result.length - len; i--, j--, k--) carry = adc(result, k, a[i], b[j], carry);	
+    for (; k >= result.length - len; i--, j--, k--) carry = adc(result, k, a[i], b[j], carry);
     return (byte) carry;
   }
 
@@ -1113,7 +1211,11 @@ public final class UInt256Algo {
     }
     return result;
   }
+  // --------------------------------------------------------------------------
+  // endregion
 
+  // region Division
+  // ---------------------------------------------------------------------------
   private static int[] knuthRemainder(final int[] dividend, final int[] modulus) {
     // Unchecked: modulus is non Zero and non One.
     int[] result = new int[INTSIZE];
@@ -1204,6 +1306,281 @@ public final class UInt256Algo {
       }
     }
     // Unnormalize remainder
+    shiftRightInto(result, uLimbs, diffLen, shift);
+    return result;
+  }
+
+  private static long reciprocal(final long x) {
+    // Unchecked: x >= (1 << 63)
+    long x0 = x & 1L;
+    int x9 = (int) (x >>> 55);
+    long x40 = 1 + (x >>> 24);
+    long x63 = (x + 1) >>> 1;
+    long v0 = LUT[x9 - 256] & 0xFFFFL;
+    long v1 = (v0 << 11) - ((v0 * v0 * x40) >>> 40) - 1;
+    long v2 = (v1 << 13) + ((v1 * ((1L << 60) - v1 * x40)) >>> 47);
+    long e = ((v2 >>> 1) & (-x0)) - v2 * x63;
+    long s = Math.unsignedMultiplyHigh(v2, e);
+    long v3 = (s >>> 1) + (v2 << 31);
+    long t0 = v3 * x;
+    long t1 = Math.unsignedMultiplyHigh(v3, x);
+    t0 += x;
+    if (Long.compareUnsigned(t0, x) < 0) t1++;
+    t1 += x;
+    long v4 = v3 - t1;
+    return v4;
+  }
+
+  private static long reciprocal(final long x0, final long x1) {
+    // Unchecked: <x1, x0> >= (1 << 127)
+    long v = reciprocal(x1);
+    long p = x1 * v + x0;
+    if (Long.compareUnsigned(p, x0) < 0) {
+      v--;
+      if (Long.compareUnsigned(p, x1) >= 0) {
+        v--;
+        p -= x1;
+      }
+      p -= x1;
+    }
+    long t0 = v * x0;
+    long t1 = Math.unsignedMultiplyHigh(v, x0);
+    p += t1;
+    if (Long.compareUnsigned(p, t1) < 0) {
+      v--;
+      int cmp = Long.compareUnsigned(p, x1);
+      if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(t0, x0) >= 0))) v--;
+    }
+    return v;
+  }
+
+  private static long div2by1(final long[] xs, final int xOffset, final long y, final long yInv) {
+    // Performs on x a single step of x / y
+    long x0 = xs[xOffset + 1];
+    long x1 = xs[xOffset];
+
+    // wrapping umul x1 * yInv
+    long q0 = x1 * yInv;
+    long q1 = Math.unsignedMultiplyHigh(x1, yInv);
+
+    // wrapping uadd <q1, q0> + <x1, x0> + <1, 0>
+    long sum = q0 + x0;
+    long carry = ((q0 & x0) | ((q0 | x0) & ~sum)) >>> 63;
+    q0 = sum;
+    q1 += x1 + carry + 1;
+
+    xs[xOffset + 1] -= q1 * y;
+
+    if (Long.compareUnsigned(xs[xOffset + 1], q0) > 0) {
+      q1 -= 1;
+      xs[xOffset + 1] += y;
+    }
+
+    if (Long.compareUnsigned(xs[xOffset + 1], y) >= 0) {
+      q1 += 1;
+      xs[xOffset + 1] -= y;
+    }
+    xs[xOffset] = 0;
+    return q1;
+  }
+
+  private static long div3by2(
+      final long[] xs, final int xOffset, final long y0, final long y1, final long yInv) {
+    // <x2, x1, x0> divided by <y1, y0>.
+    // Works inplace on x, modifying it to hold the remainder.
+    // Returns the quotient q.
+    // Requires <x2, x1> < <y1, y0> otherwise quotient overflows.
+    long overflow; // carry or borrow
+    long res;  // sum or diff
+    long x0 = xs[xOffset + 2];
+    long x1 = xs[xOffset + 1];
+    long x2 = xs[xOffset];
+
+    // <q1, q0> = x2 * yInv + <x2, x1>
+    long q0 = x2 * yInv;
+    long q1 = Math.unsignedMultiplyHigh(x2, yInv);
+    res = q0 + x1;
+    overflow = ((q0 & x1) | ((q0 | x1) & ~res)) >>> 63;
+    q0 = res;
+    q1 = q1 + x2 + overflow;
+
+    // r1 <- x1 - q1 * y1 mod B
+    xs[xOffset + 1] -= q1 * y1;
+
+    // wrapping sub <r1, x0> − q1*y0 − <y1, y0>
+    long t0 = q1 * y0;
+    long t1 = Math.unsignedMultiplyHigh(q1, y0);
+
+    res = x0 - t0;
+    overflow = ((~x0 & t0) | ((~x0 | t0) & res)) >>> 63;
+    xs[xOffset + 2] = res;
+    xs[xOffset + 1] -= (t1 + overflow);
+
+    res = xs[xOffset + 2] - y0;
+    overflow = ((~xs[xOffset + 2] & y0) | ((~xs[xOffset + 2] | y0) & res)) >>> 63;
+    xs[xOffset + 2] = res;
+    xs[xOffset + 1] -= (y1 + overflow);
+
+    // Adjustments
+    q1 += 1;
+    if (Long.compareUnsigned(xs[xOffset + 1], q0) >= 0) {
+      q1 -= 1;
+      res = xs[xOffset + 2] + y0;
+      overflow = ((xs[xOffset + 2] & y0) | ((xs[xOffset + 2] | y0) & ~res)) >>> 63;
+      xs[xOffset + 2] = res;
+      xs[xOffset + 1] += y1 + overflow;
+    }
+
+    int cmp = Long.compareUnsigned(xs[xOffset + 1], y1);
+    if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(xs[xOffset + 2], y0) >= 0))) {
+      q1 += 1;
+      res = xs[xOffset + 2] - y0;
+      overflow = ((~xs[xOffset + 2] & y0) | ((~xs[xOffset + 2] | y0) & res)) >>> 63;
+      xs[xOffset + 2] = res;
+      xs[xOffset + 1] -= (y1 + overflow);
+    }
+    xs[xOffset] = 0;
+    return q1;
+  }
+
+  private static void modNby1(final long[] xs, final int xOffset, final long y, final long yInv) {
+    // Unchecked: y > 1 << 63
+    // if xs >= y, overflows, so must substract y first
+    // Can happen only with most significant digit ?
+    for (int i = xOffset; i < xs.length - 1; i++) {
+      if (Long.compareUnsigned(xs[i], y) >= 0) xs[i] -= y;
+      div2by1(xs, i, y, yInv);
+    }
+  }
+
+  private static void modNby2(
+      final long[] xs, final int xOffset, final long y0, final long y1, final long yInv) {
+    // if <x+1, x+0> >= <y1, y0>, overflows, so must substract <y1, y0> first
+    for (int i = xOffset; i < xs.length - 2; i++) {
+      long x1 = xs[i];
+      long x0 = xs[i + 1];
+      int cmp = Long.compareUnsigned(x1, y1);
+      if ((cmp > 0) || ((cmp == 0) && (Long.compareUnsigned(x0, y0) >= 0))) {
+        long borrow = (Long.compareUnsigned(y0, x0) > 0) ? 1 : 0;
+        xs[i + 1] -= y0;
+        xs[i] -= (y1 + borrow);
+      }
+      long q = div3by2(xs, i, y0, y1, yInv);
+    }
+  }
+
+  private static void modNbyM(
+      final long[] xs, final int xOffset, final long[] ys, final int yOffset, final long yInv) {
+    long res;
+    long borrow = 0;
+    long y1 = ys[yOffset];
+    long y0 = ys[yOffset + 1];
+    int yLen = ys.length - yOffset;
+    int xLen = xs.length - xOffset;
+    for (int j = 0; j < xLen - yLen; j++) {
+      // Unlikely overflow 3x2 case: x[..2] == y
+      if (((y1 ^ xs[j]) | (y0 ^ xs[j + 1])) == 0) {
+        // q = <1, 0> in this case, so multiply is trivial.
+        // Still need to substract (and add back if needed).
+        int i = j + yLen;
+        for (int k = ys.length - 1; k >= yOffset; i--, k--) {
+          res = xs[i] - ys[k] - borrow;
+          borrow = ((~xs[i] & ys[k]) | ((~xs[i] | ys[k]) & res)) >>> 63;
+          xs[i] = res;
+        }
+        // xs[i] -= borrow;
+        // borrow = (xs[i] >>> 63) & 1L;
+      } else {
+        long q = div3by2(xs, j, y0, y1, yInv);
+        long res0;
+        long prodHigh = 0;
+
+        // Multiply-subtract: already have highest 2 limbs
+        int i = j + yLen;
+        for (int k = ys.length - 1; k >= yOffset + 2; k--, i--) {
+          long p0 = ys[k] * q;
+          long p1 = Math.unsignedMultiplyHigh(ys[k], q);
+          res0 = xs[i] - p0 - borrow;
+          p1 += ((~xs[i] & p0) | ((~xs[i] | p0) & res0)) >>> 63;  // p1 < b - 1 so can add 0 or 1
+          res = res0 - prodHigh;
+          borrow = ((~res0 & prodHigh) | ((~res0 | prodHigh) & res)) >>> 63;
+          xs[i] = res;
+          prodHigh = p1;
+        }
+        // Propagate overflows (borrows)
+        res = xs[i] - prodHigh - borrow;
+        borrow = ((~xs[i] & prodHigh) | ((~xs[i] | prodHigh) & res)) >>> 63;
+        xs[i--] = res;
+
+        res = xs[i] - borrow;
+        borrow = (((borrow ^ 1L) | xs[i]) == 0) ? 1 : 0;
+        xs[i--] = res;
+
+        xs[i] -= borrow;
+        borrow = (xs[i] >>> 63) & 1;
+      }
+
+      if (borrow != 0) { // unlikely
+        // Add back
+        long carry = 0;
+        int i = j + yLen;
+        for (int k = ys.length - 1; k >= yOffset; k--, i--) {
+          res = xs[i] + ys[k] + carry;
+          carry = ((xs[i] & ys[k]) | ((xs[i] | ys[k]) & ~res)) >>> 63;
+          xs[i] = res;
+        }
+        for (; (carry != 0) && (i >= j); i--) {
+          xs[i] += carry;
+          carry = (xs[i] == 0L) ? 1L : 0L;
+        }
+      }
+      borrow = 0;
+    }
+  }
+
+  private static long[] knuthRemainder(final long[] dividend, final long[] modulus) {
+    long[] result = new long[LONGSIZE];
+    int divLen = dividend.length - nLeadingZeroes(dividend);
+    int modLen = modulus.length - nLeadingZeroes(modulus);
+
+
+    // Shortcuts
+    if (modLen == 0) return result;
+    if (divLen == 1) {
+      if (modLen == 1) result[result.length - 1] = Long.remainderUnsigned(dividend[dividend.length - 1], modulus[dividend.length - 1]);
+      else System.arraycopy(dividend, dividend.length - divLen, result, LONGSIZE - divLen, divLen);
+      return result;
+    }
+    // Shortcut: if dividend < modulus or dividend == modulus
+    int cmp = compareLimbs(dividend, modulus);
+    if (cmp < 0) {
+      System.arraycopy(dividend, dividend.length - divLen, result, LONGSIZE - divLen, divLen);
+      return result;
+    } else if (cmp == 0) {
+      return result;
+    }
+
+    // Perform Division
+    // -- Normalise
+    int shift = Long.numberOfLeadingZeros(modulus[modulus.length - modLen]);
+    long[] vLimbs = new long[modLen];
+    shiftLeftInto(vLimbs, modulus, modulus.length - modLen, shift);
+    long[] uLimbs = new long[divLen + 1];
+    uLimbs[0] = shiftLeftInto(uLimbs, dividend, dividend.length - divLen, shift);
+    int diffLen = divLen - modLen + 1;
+
+    // -- Divide
+    if (modLen == 1) {
+      long inv = reciprocal(vLimbs[0]);
+      modNby1(uLimbs, 0, vLimbs[0], inv);
+    } else if (modLen == 2) {
+      long inv = reciprocal(vLimbs[1], vLimbs[0]);
+      modNby2(uLimbs, 0, vLimbs[1], vLimbs[0], inv);
+    } else {
+      long inv = reciprocal(vLimbs[modLen - 2], vLimbs[modLen - 1]);
+      modNbyM(uLimbs, 0, vLimbs, modLen, inv);
+    }
+    // -- Unnormalize
     shiftRightInto(result, uLimbs, diffLen, shift);
     return result;
   }
