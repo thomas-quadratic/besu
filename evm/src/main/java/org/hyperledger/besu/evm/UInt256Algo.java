@@ -30,18 +30,14 @@ public final class UInt256Algo {
   // Length is used to optimise algorithms, skipping leading zeroes.
   // Nonetheless, 256bits are always allocated and initialised to zeroes.
 
-  // Fixed number of limbs or digits
-  private static final int N_LIMBS = 8;
-  // Fixed number of bits per limb.
-  private static final int N_BITS_PER_LIMB = 32;
+  // Fixed sizes
+  public static final int BITSIZE = 256;
+  public static final int BYTESIZE = 32;
+  public static final int INTSIZE = 8;
+  public static final int LONGSIZE = 4;
+
   // Mask for long values
   private static final long MASK_L = 0xFFFFFFFFL;
-
-  /** Fixed size in bytes. */
-  public static final int BYTESIZE = 32;
-
-  /** Fixed size in bits. */
-  public static final int BITSIZE = 256;
 
   // Arrays of zeros.
   private static final byte[] ZERO_BYTES = new byte[BYTESIZE];
